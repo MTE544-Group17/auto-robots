@@ -1,2 +1,0 @@
-
--DCATKIN_DEVEL_PREFIX=/home/mihai/Documents/Github/auto-robots/devel -DCMAKE_INSTALL_PREFIX=/home/mihai/Documents/Github/auto-robots/install -G Unix Makefiles

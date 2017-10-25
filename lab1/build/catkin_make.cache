@@ -1,2 +1,0 @@
-beginner_tutorials:turtlebot_example
--DCATKIN_DEVEL_PREFIX=/home/rishab/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/rishab/catkin_ws/install -G Unix Makefiles
