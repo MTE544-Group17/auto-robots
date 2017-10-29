@@ -10,6 +10,7 @@
 double ips_x;
 double ips_y;
 double ips_yaw;
+int map_resolution = 20;
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
 
@@ -93,6 +94,38 @@ int main(int argc, char **argv)
     ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
     ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
 
+    //Setup topics that this node will Publish to
+    ros::Publisher map_publisher = n.adverstise<nav_msgs::OccupancyGrid>("/map",1);
+
+    //Initialize our empty map grid
+    nav_msgs::OccupancyGrid map;
+    nav_msgs::MapMetaData meta_data;
+    int8 map_data[(map_resolution*map_resolution)];
+    //Set all cell probabilities to -1 (unknown)
+    for (int i=0; i<(map_resolution*map_resolution): i++)
+    {
+      map_data[i] = -1;
+    }
+    map.data = map_data;
+
+    meta_data.time = ros::Time::now();
+    meta_data.resolution = 5/map_resolution;
+    meta_data.width = map_resolution;
+    meta_data.height = map_resolution;
+
+    geometry_msgs::Pose origin_pose;
+    geometry_msgs::Point origin_point;
+    geometry_msgs::Quaternion origin_quat;
+
+    origin_point.x = 0;
+    origin_point.y = 0;
+    origin_point.z = 0;
+    origin_quat.x = 0;
+    origin_quat.y = 0;
+    origin_quat.z = 0;
+    origin_quat.w = 0;
+
+    meta_data.origin = origin_pose;
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
