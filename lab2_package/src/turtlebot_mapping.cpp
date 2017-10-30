@@ -1,3 +1,15 @@
+//  ///////////////////////////////////////////////////////////
+//
+// Lab2 Code for MTE 544
+// This file contains example code for use with ME 597 lab 2
+// It outlines the basic setup of a ros node and the various
+// inputs and outputs needed for this lab
+//
+// Author: Rishab Sareen & Pavel Shering
+//
+// //////////////////////////////////////////////////////////
+
+
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -6,11 +18,17 @@
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
+#include <fstream>
+#include <cmath>
+#include <sstream>
 
 double ips_x;
 double ips_y;
 double ips_yaw;
-int map_resolution = 20;
+const int8_t map_resolution = 20;
+nav_msgs::OccupancyGrid map;
+
+// typedef char int8;
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
 
@@ -84,34 +102,24 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
 
 }
 
-int main(int argc, char **argv)
+void map_build()
 {
-	  //Initialize the ROS framework
-    ros::init(argc,argv,"main_control");
-    ros::NodeHandle n;
-
-    //Subscribe to the desired topics and assign callbacks
-    ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
-    ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
-
-    //Setup topics that this node will Publish to
-    ros::Publisher map_publisher = n.adverstise<nav_msgs::OccupancyGrid>("/map",1);
-
-    //Initialize our empty map grid
-    nav_msgs::OccupancyGrid map;
-    nav_msgs::MapMetaData meta_data;
-    int8 map_data[(map_resolution*map_resolution)];
+    int map_size = map_resolution*map_resolution;
+    int8_t map_data[(map_size)];
     //Set all cell probabilities to -1 (unknown)
-    for (int i=0; i<(map_resolution*map_resolution): i++)
+    for (int i=0; i<map_size; i++)
     {
       map_data[i] = -1;
     }
-    map.data = map_data;
+    // maybe fix this later
+    std::vector<signed char> a(map_data, map_data+map_size);
+    map.data = a;
+    ROS_INFO("%d", map.data.size());
 
-    meta_data.time = ros::Time::now();
-    meta_data.resolution = 5/map_resolution;
-    meta_data.width = map_resolution;
-    meta_data.height = map_resolution;
+    map.info.map_load_time = ros::Time::now();
+    map.info.resolution = 5/map_resolution;
+    map.info.width = map_resolution;
+    map.info.height = map_resolution;
 
     geometry_msgs::Pose origin_pose;
     geometry_msgs::Point origin_point;
@@ -125,17 +133,74 @@ int main(int argc, char **argv)
     origin_quat.z = 0;
     origin_quat.w = 0;
 
-    meta_data.origin = origin_pose;
+    map.info.origin = origin_pose;
+
+}
+
+bool save_map(const std::string& name)
+{
+    std::string filename;
+    if (name.empty()) {
+        const ros::Time time = ros::Time::now();
+        const int sec = time.sec;
+        const int nsec = time.nsec;
+
+        std::stringstream sname;
+        sname << "map_";
+        sname << std::setw(5) << std::setfill('0') << sec;
+        sname << std::setw(0) << "_";
+        sname << std::setw(9) << std::setfill('0') << nsec;
+        sname << std::setw(0) << ".txt";
+        filename = sname.str();
+    } else {
+     filename = name;
+    }
+
+    std::ofstream ofs;
+    ofs.open(filename.c_str());
+    if (!ofs.is_open()) {
+        ROS_ERROR("Cannot open %s", filename.c_str());
+        return false;
+    }
+    for (size_t i = 0; i < map.data.size(); i++) {
+        ofs << static_cast<int>(map.data[i]);
+        if ((i % map.info.width) == (map.info.width - 1)) {
+            ofs << "\n";
+        } else {
+            ofs << ",";
+        }
+    }
+    ofs.close();
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+	  //Initialize the ROS framework
+    ros::init(argc,argv,"main_control");
+    ros::NodeHandle n;
+
+    //Subscribe to the desired topics and assign callbacks
+    ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
+    ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
+
+    //Setup topics that this node will Publish to
+    ros::Publisher map_publisher = n.advertise<nav_msgs::OccupancyGrid>("/map",1);
+
+    //Initialize our empty map grid
+    map_build();
+    bool res = save_map("1");
+    ROS_INFO("%d\n", res);
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
 
     while (ros::ok())
     {
-      loop_rate.sleep(); //Maintain the loop rate
-      ros::spinOnce();   //Check for new messages
-
+        loop_rate.sleep(); //Maintain the loop rate
+        ros::spinOnce();   //Check for new messages
       //Main loop code goes here:
+        map_publisher.publish(map);
     }
 
     return 0;
