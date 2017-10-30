@@ -112,7 +112,7 @@ struct particle {
 
 vector<particle> particle_set(num_particles);
 
-particle add_particle () {
+particle create_particle () {
   particle p;
   p.x = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
   p.y = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
