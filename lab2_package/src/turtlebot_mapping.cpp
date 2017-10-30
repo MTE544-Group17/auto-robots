@@ -23,6 +23,7 @@
 #include <sstream>
 #include <tf/transform_broadcaster.h>
 #include <string>
+#include <vector>
 
 double ips_x;
 double ips_y;
@@ -30,7 +31,7 @@ double ips_yaw;
 double angle_min;
 double angle_max;
 double angle_inc;
-double ranges[];
+std::vector<double> ranges(640);
 const int8_t map_resolution = 20;
 nav_msgs::OccupancyGrid map;
 
@@ -109,9 +110,9 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
     angle_max = msg.angle_max;
     angle_inc = msg.angle_increment;
 
-    ranges = msg.ranges;
     for (int i=0; i<msg.ranges.size(); i++)
     {
+      ranges[i] = msg.ranges[i];
       if (ranges[i]<msg.range_min||ranges[i]>msg.range_max)
       {
         ranges[i]=-1;
@@ -131,7 +132,6 @@ void map_build()
     // maybe fix this later
     std::vector<signed char> a(map_data, map_data+map_size);
     map.data = a;
-    ROS_INFO("%d", map.data.size());
 
     map.info.map_load_time = ros::Time::now();
     map.info.resolution = 5/map_resolution;
@@ -210,7 +210,6 @@ int main(int argc, char **argv)
     //Initialize our empty map grid
     map_build();
     bool res = save_map("1");
-    ROS_INFO("%d\n", res);
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
