@@ -21,6 +21,7 @@
 #include <fstream>
 #include <cmath>
 #include <sstream>
+#include <tf/transform_broadcaster.h>
 
 double ips_x;
 double ips_y;
@@ -180,6 +181,9 @@ int main(int argc, char **argv)
     ros::init(argc,argv,"main_control");
     ros::NodeHandle n;
 
+    //Create tf broadcaster
+    tf::TransformBroadcaster broadcaster;
+
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
     ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
@@ -201,6 +205,11 @@ int main(int argc, char **argv)
         ros::spinOnce();   //Check for new messages
       //Main loop code goes here:
         map_publisher.publish(map);
+        broadcaster.sendTransform(
+          tf::StampedTransform(
+            tf::Transform(
+              tf::Quaternion(0, 0, 0, 0), tf::Vector3(0.0, 0.0, 0.0)),
+              ros::Time::now(),"base_link", "map"));
     }
 
     return 0;
