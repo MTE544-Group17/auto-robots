@@ -27,6 +27,10 @@
 double ips_x;
 double ips_y;
 double ips_yaw;
+double angle_min;
+double angle_max;
+double angle_inc;
+double ranges[];
 const int8_t map_resolution = 20;
 nav_msgs::OccupancyGrid map;
 
@@ -101,7 +105,18 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 //Callback function for the Laser Scan data topic
 void laser_callback(const sensor_msgs::LaserScan& msg)
 {
+    angle_min = msg.angle_min;
+    angle_max = msg.angle_max;
+    angle_inc = msg.angle_increment;
 
+    ranges = msg.ranges;
+    for (int i=0; i<msg.ranges.size(); i++)
+    {
+      if (ranges[i]<msg.range_min||ranges[i]>msg.range_max)
+      {
+        ranges[i]=-1;
+      }
+    }
 }
 
 void map_build()
