@@ -16,12 +16,16 @@
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
+#include <tf/transform_broadcaster.h>
+
 #include <fstream>
 #include <cmath>
 #include <sstream>
-#include <tf/transform_broadcaster.h>
 #include <string>
 #include <vector>
+
+#define MAP_RESOLUTION    80.0
+#define MAP_D    10.0
 
 double ips_x;
 double ips_y;
@@ -30,10 +34,8 @@ double angle_min;
 double angle_max;
 double angle_inc;
 std::vector<double> ranges(640);
-const int8_t map_resolution = 20;
 nav_msgs::OccupancyGrid map;
 
-// typedef char int8;
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
 
@@ -81,13 +83,21 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
 void pose_callback(const gazebo_msgs::ModelStates& msg)
 {
 
+    //Create tf broadcaster
+    tf::TransformBroadcaster broadcaster;
+
     int i;
     for(i = 0; i < msg.name.size(); i++) if(msg.name[i] == "mobile_base") break;
 
     ips_x = msg.pose[i].position.x ;
     ips_y = msg.pose[i].position.y ;
-    ips_yaw = tf::getYaw(msg.pose[i].orientation);
+    ips_yaw = tf::getYaw(msg.pose[i].orientation);\
 
+    broadcaster.sendTransform(
+          tf::StampedTransform(
+            tf::Transform(
+              tf::Quaternion(ips_yaw, 0, 0), tf::Vector3(ips_x, ips_y, 0.0)),
+              ros::Time::now(),"base_link", "map"));
 }
 
 //Callback function for the Position topic (LIVE)
@@ -122,19 +132,15 @@ void map_build()
 {
     // map.header.frame_id = ros::this_node::getName() + "/local_map";
     map.info.map_load_time = ros::Time::now();
-    map.info.resolution = 5/map_resolution;
-    map.info.width = map_resolution;
-    map.info.height = map_resolution;
+    map.info.resolution = MAP_D / MAP_RESOLUTION;
+    map.info.width = MAP_RESOLUTION;
+    map.info.height = MAP_RESOLUTION;
 
     map.info.origin.position.x = -static_cast<double>(map.info.width) / 2 * map.info.resolution;
-    map.info.origin.position.x = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
+    map.info.origin.position.y = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
     map.info.origin.orientation.w = 1.0;
     map.data.assign(map.info.width * map.info.height, -1); // fill the map with "unknown" occupancy of -1
     ROS_INFO("%d", map.data.size());
-    // log_odds = log(occupancy / (1 - occupancy)); // prefill with equiqual probablity between being occupied and free
-    // occupancy = 0.5;
-    // log_odds.assign(map.info.width*map.info.height, 0);
-
 }
 
 bool save_map(const std::string& name)
@@ -180,9 +186,6 @@ int main(int argc, char **argv)
     ros::init(argc,argv,"main_control");
     ros::NodeHandle n;
 
-    //Create tf broadcaster
-    tf::TransformBroadcaster broadcaster;
-
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
     ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
@@ -193,6 +196,7 @@ int main(int argc, char **argv)
     //Initialize our empty map grid
     map_build();
     bool res = save_map("1");
+    // print_map(&map, map.info.width);
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
@@ -201,13 +205,9 @@ int main(int argc, char **argv)
     {
         loop_rate.sleep(); //Maintain the loop rate
         ros::spinOnce();   //Check for new messages
-      //Main loop code goes here:
+        //Main loop code goes here:
         map_publisher.publish(map);
-        broadcaster.sendTransform(
-          tf::StampedTransform(
-            tf::Transform(
-              tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.0, 0.0, 0.0)),
-              ros::Time::now(),"base_link", "map"));
+
     }
 
     return 0;
