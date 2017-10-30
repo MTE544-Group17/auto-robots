@@ -2,13 +2,14 @@
 //
 // turtlebot_example.cpp
 // This file contains example code for use with ME 597 lab 2
-// It outlines the basic setup of a ros node and the various 
+// It outlines the basic setup of a ros node and the various
 // inputs and outputs needed for this lab
-// 
-// Author: James Servos 
+//
+// Author: James Servos
 // Edited: Nima Mohajerin
 //
 // //////////////////////////////////////////////////////////
+#define MAP_SIZE 10.0
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -18,6 +19,7 @@
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
 
+#include <cmath>
 
 ros::Publisher pose_publisher;
 ros::Publisher marker_pub;
@@ -26,10 +28,12 @@ double ips_x;
 double ips_y;
 double ips_yaw;
 
+int num_particles = 100;
+
 short sgn(int x) { return x >= 0 ? 1 : -1; }
 
 //Callback function for the Position topic (SIMULATION)
-void pose_callback(const gazebo_msgs::ModelStates& msg) 
+void pose_callback(const gazebo_msgs::ModelStates& msg)
 {
 
     int i;
@@ -56,13 +60,13 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 void map_callback(const nav_msgs::OccupancyGrid& msg)
 {
     //This function is called when a new map is received
-    
+
     //you probably want to save the map into a form which is easy to work with
 }
 
 //Bresenham line algorithm (pass empty vectors)
 // Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
-//        points (x, y) are stored in the x and y vector. x and y should be empty 
+//        points (x, y) are stored in the x and y vector. x and y should be empty
 //	  vectors of integers and shold be defined where this function is called from.
 void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y) {
 
@@ -70,7 +74,7 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
     int dy = abs(y1 - y0);
     int dx2 = x1 - x0;
     int dy2 = y1 - y0;
-    
+
     const bool s = abs(dy) > abs(dx);
 
     if (s) {
@@ -100,10 +104,25 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
     }
 }
 
+struct particle {
+  double x = 0;
+  double y = 0;
+  double weight = 0;
+}
+
+vector<particle> particle_set(num_particles);
+
+particle add_particle () {
+  particle p;
+  p.x = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
+  p.y = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
+
+  return p;
+}
 
 int main(int argc, char **argv)
 {
-	//Initialize the ROS framework
+	  //Initialize the ROS framework
     ros::init(argc,argv,"main_control");
     ros::NodeHandle n;
 
@@ -115,13 +134,13 @@ int main(int argc, char **argv)
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     pose_publisher = n.advertise<geometry_msgs::PoseStamped>("/pose", 1, true);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
-    
+
     //Velocity control variable
     geometry_msgs::Twist vel;
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
-	
+
 
     while (ros::ok())
     {
@@ -130,7 +149,9 @@ int main(int argc, char **argv)
 
     	//Main loop code goes here:
     	vel.linear.x = 0.1; // set linear speed
-    	vel.angular.z = 0.3; // set angular speed
+    	// vel.angular.z = 0.3; // set angular speed
+
+      ROS_INFO("Coord: (%f, %f)", ips_x, ips_y);
 
     	velocity_publisher.publish(vel); // Publish the command velocity
     }
