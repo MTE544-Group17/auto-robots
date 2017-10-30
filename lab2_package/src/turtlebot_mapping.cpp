@@ -8,8 +8,6 @@
 // Author: Rishab Sareen & Pavel Shering
 //
 // //////////////////////////////////////////////////////////
-
-
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -23,10 +21,15 @@
 #include <sstream>
 #include <tf/transform_broadcaster.h>
 #include <string>
+#include <vector>
 
 double ips_x;
 double ips_y;
 double ips_yaw;
+double angle_min;
+double angle_max;
+double angle_inc;
+std::vector<double> ranges(640);
 const int8_t map_resolution = 20;
 nav_msgs::OccupancyGrid map;
 
@@ -101,7 +104,18 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 //Callback function for the Laser Scan data topic
 void laser_callback(const sensor_msgs::LaserScan& msg)
 {
+    angle_min = msg.angle_min;
+    angle_max = msg.angle_max;
+    angle_inc = msg.angle_increment;
 
+    for (int i=0; i<msg.ranges.size(); i++)
+    {
+      ranges[i] = msg.ranges[i];
+      if (ranges[i]<msg.range_min||ranges[i]>msg.range_max)
+      {
+        ranges[i]=-1;
+      }
+    }
 }
 
 void map_build()
@@ -179,7 +193,6 @@ int main(int argc, char **argv)
     //Initialize our empty map grid
     map_build();
     bool res = save_map("1");
-    ROS_INFO("%d\n", res);
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
