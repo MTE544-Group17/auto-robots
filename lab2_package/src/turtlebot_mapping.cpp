@@ -33,6 +33,12 @@ double ips_yaw;
 double angle_min;
 double angle_max;
 double angle_inc;
+double p_occ = 0.7;
+double l_p_occ = log(p_occ/(1-p_occ));
+double p_free = 0.3;
+double l_p_free = log(p_free/(1-p_free));
+double p_0 = 0.5;
+double l_p_0 = log(p_0/(1-p_0));
 std::vector<double> ranges(640);
 nav_msgs::OccupancyGrid map;
 
@@ -117,6 +123,7 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
     angle_min = msg.angle_min;
     angle_max = msg.angle_max;
     angle_inc = msg.angle_increment;
+    range_max = msg.range_max;
 
     for (int i=0; i<msg.ranges.size(); i++)
     {
@@ -128,7 +135,7 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
     }
 }
 
-void map_build()
+void build_map()
 {
     // map.header.frame_id = ros::this_node::getName() + "/local_map";
     map.info.map_load_time = ros::Time::now();
@@ -180,6 +187,38 @@ bool save_map(const std::string& name)
     return true;
 }
 
+void update_map ()
+{
+    //Add: bound robot within map dimensions
+    std::vector<int> x(1);
+    std::vector<int> y(1);
+
+    for (int i=0; i<ranges.size(); i++)
+    {
+        double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i))
+        double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i))
+        //Add: bound endpoint within map dimensions
+
+        bresenham(ips_x, ips_y, endpoint_x, endpoint_y, x, y);
+        std::vector<int> l(x.size());
+
+        //Calculated updated log odds for points defined in x and y vectors
+        for (int j=0; j<x.size(); j++)
+        {
+          if (j==(x.size()-1) && ranges[i] < range_max)
+          {
+            map.data[x[j]+(y[j]*map_resolution)] = map.data[x[j]+(y[j]*map_resolution)] +
+            l_p_occ - l_p_0;
+          }
+          else
+          {
+            map.data[x[j]+(y[j]*map_resolution)] = map.data[x[j]+(y[j]*map_resolution)] +
+            l_p_occ - l_p_0;
+          }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
 	  //Initialize the ROS framework
@@ -194,7 +233,7 @@ int main(int argc, char **argv)
     ros::Publisher map_publisher = n.advertise<nav_msgs::OccupancyGrid>("/map",1);
 
     //Initialize our empty map grid
-    map_build();
+    build_map();
     bool res = save_map("1");
     // print_map(&map, map.info.width);
 
@@ -206,6 +245,7 @@ int main(int argc, char **argv)
         loop_rate.sleep(); //Maintain the loop rate
         ros::spinOnce();   //Check for new messages
         //Main loop code goes here:
+        update_map();
         map_publisher.publish(map);
 
     }
