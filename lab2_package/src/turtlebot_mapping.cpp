@@ -22,6 +22,7 @@
 #include <cmath>
 #include <sstream>
 #include <tf/transform_broadcaster.h>
+#include <string>
 
 double ips_x;
 double ips_y;
@@ -110,7 +111,7 @@ void map_build()
     //Set all cell probabilities to -1 (unknown)
     for (int i=0; i<map_size; i++)
     {
-      map_data[i] = -1;
+      map_data[i] = 1;
     }
     // maybe fix this later
     std::vector<signed char> a(map_data, map_data+map_size);
@@ -132,7 +133,7 @@ void map_build()
     origin_quat.x = 0;
     origin_quat.y = 0;
     origin_quat.z = 0;
-    origin_quat.w = 0;
+    origin_quat.w = 1;
 
     map.info.origin = origin_pose;
 
@@ -208,7 +209,7 @@ int main(int argc, char **argv)
         broadcaster.sendTransform(
           tf::StampedTransform(
             tf::Transform(
-              tf::Quaternion(0, 0, 0, 0), tf::Vector3(0.0, 0.0, 0.0)),
+              tf::Quaternion(0, 0, 0, 1), tf::Vector3(0.0, 0.0, 0.0)),
               ros::Time::now(),"base_link", "map"));
     }
 
