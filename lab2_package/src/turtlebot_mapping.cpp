@@ -111,7 +111,7 @@ void map_build()
     //Set all cell probabilities to -1 (unknown)
     for (int i=0; i<map_size; i++)
     {
-      map_data[i] = 1;
+      map_data[i] = -1;
     }
     // maybe fix this later
     std::vector<signed char> a(map_data, map_data+map_size);
