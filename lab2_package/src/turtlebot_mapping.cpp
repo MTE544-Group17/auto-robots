@@ -106,36 +106,20 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
 
 void map_build()
 {
-    int map_size = map_resolution*map_resolution;
-    int8_t map_data[(map_size)];
-    //Set all cell probabilities to -1 (unknown)
-    for (int i=0; i<map_size; i++)
-    {
-      map_data[i] = -1;
-    }
-    // maybe fix this later
-    std::vector<signed char> a(map_data, map_data+map_size);
-    map.data = a;
-    ROS_INFO("%d", map.data.size());
-
+    // map.header.frame_id = ros::this_node::getName() + "/local_map";
     map.info.map_load_time = ros::Time::now();
     map.info.resolution = 5/map_resolution;
     map.info.width = map_resolution;
     map.info.height = map_resolution;
 
-    geometry_msgs::Pose origin_pose;
-    geometry_msgs::Point origin_point;
-    geometry_msgs::Quaternion origin_quat;
-
-    origin_point.x = 0;
-    origin_point.y = 0;
-    origin_point.z = 0;
-    origin_quat.x = 0;
-    origin_quat.y = 0;
-    origin_quat.z = 0;
-    origin_quat.w = 1;
-
-    map.info.origin = origin_pose;
+    map.info.origin.position.x = -static_cast<double>(map.info.width) / 2 * map.info.resolution;
+    map.info.origin.position.x = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
+    map.info.origin.orientation.w = 1.0;
+    map.data.assign(map.info.width * map.info.height, -1); // fill the map with "unknown" occupancy of -1
+    ROS_INFO("%d", map.data.size());
+    // log_odds = log(occupancy / (1 - occupancy)); // prefill with equiqual probablity between being occupied and free
+    // occupancy = 0.5;
+    // log_odds.assign(map.info.width*map.info.height, 0);
 
 }
 
