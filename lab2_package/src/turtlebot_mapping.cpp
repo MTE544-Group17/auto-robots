@@ -33,6 +33,7 @@ double ips_yaw;
 double angle_min;
 double angle_max;
 double angle_inc;
+double range_max;
 double p_occ = 0.7;
 double l_p_occ = log(p_occ/(1-p_occ));
 double p_free = 0.3;
@@ -41,6 +42,7 @@ double p_0 = 0.5;
 double l_p_0 = log(p_0/(1-p_0));
 std::vector<double> ranges(640);
 nav_msgs::OccupancyGrid map;
+std::vector<double> l_map_data;
 
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
@@ -49,8 +51,9 @@ short sgn(int x) { return x >= 0 ? 1 : -1; }
 // Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
 //        points (x, y) are stored in the x and y vector. x and y should be empty
 //	  vectors of integers and shold be defined where this function is called from.
-void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y) {
-
+void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y)
+{
+    ROS_INFO("starting bresenham");
     int dx = abs(x1 - x0);
     int dy = abs(y1 - y0);
     int dx2 = x1 - x0;
@@ -78,7 +81,6 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
             d += inc2;
             if (s) x0+=sgn(dx2); else y0+=sgn(dy2);
         }
-
         //Add point to vector
         x.push_back(x0);
         y.push_back(y0);
@@ -88,7 +90,7 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
 //Callback function for the Position topic (SIMULATION)
 void pose_callback(const gazebo_msgs::ModelStates& msg)
 {
-
+      ROS_INFO("pose_callback");
     //Create tf broadcaster
     tf::TransformBroadcaster broadcaster;
 
@@ -104,6 +106,7 @@ void pose_callback(const gazebo_msgs::ModelStates& msg)
             tf::Transform(
               tf::Quaternion(ips_yaw, 0, 0), tf::Vector3(ips_x, ips_y, 0.0)),
               ros::Time::now(),"base_link", "map"));
+    ROS_INFO("pose_callback_complete");
 }
 
 //Callback function for the Position topic (LIVE)
@@ -120,6 +123,7 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 //Callback function for the Laser Scan data topic
 void laser_callback(const sensor_msgs::LaserScan& msg)
 {
+    ROS_INFO("laser_callback");
     angle_min = msg.angle_min;
     angle_max = msg.angle_max;
     angle_inc = msg.angle_increment;
@@ -130,9 +134,10 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
       ranges[i] = msg.ranges[i];
       if (ranges[i]<msg.range_min||ranges[i]>msg.range_max)
       {
-        ranges[i]=-1;
+        ranges[i]=range_max;
       }
     }
+    ROS_INFO("laser_callback_complete");
 }
 
 void build_map()
@@ -146,8 +151,10 @@ void build_map()
     map.info.origin.position.x = -static_cast<double>(map.info.width) / 2 * map.info.resolution;
     map.info.origin.position.y = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
     map.info.origin.orientation.w = 1.0;
-    map.data.assign(map.info.width * map.info.height, -1); // fill the map with "unknown" occupancy of -1
+    map.data.assign(map.info.width * map.info.height, 50); // fill the map with 50/50 chance of occupancy
     ROS_INFO("%d", map.data.size());
+    double log_odds = log(0.5/(1-0.5));
+    l_map_data.assign(map.data.size(), log_odds);
 }
 
 bool save_map(const std::string& name)
@@ -189,34 +196,47 @@ bool save_map(const std::string& name)
 
 void update_map ()
 {
-    //Add: bound robot within map dimensions
+    ROS_INFO("Updating map");
     std::vector<int> x(1);
     std::vector<int> y(1);
+    ROS_INFO("Vectors defined");
+    //Bound robot within map dimensions
+    int robot_x = int(round((MAP_RESOLUTION/MAP_D)*ips_x));
+    int robot_y = int(round((MAP_RESOLUTION/MAP_D)*ips_y));
+    ROS_INFO("Robot position defined");
 
     for (int i=0; i<ranges.size(); i++)
     {
-        double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i))
-        double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i))
-        //Add: bound endpoint within map dimensions
-
-        bresenham(ips_x, ips_y, endpoint_x, endpoint_y, x, y);
-        std::vector<int> l(x.size());
-
+        ROS_INFO("%d",i);
+        double endpoint_x = robot_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i));
+        double endpoint_y = robot_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i));
+        ROS_INFO("Endpoint defined");
+        //Bound endpoint within map dimensions
+        endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
+        endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
+        ROS_INFO("Endpoint rounded");
+        bresenham(robot_x, robot_y, int(endpoint_x), int(endpoint_y), x, y);
+        ROS_INFO("bresenham run");
         //Calculated updated log odds for points defined in x and y vectors
+        double e_l_map_data;
         for (int j=0; j<x.size(); j++)
         {
           if (j==(x.size()-1) && ranges[i] < range_max)
           {
-            map.data[x[j]+(y[j]*map_resolution)] = map.data[x[j]+(y[j]*map_resolution)] +
-            l_p_occ - l_p_0;
+            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] =
+            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] + l_p_occ - l_p_0;
           }
           else
           {
-            map.data[x[j]+(y[j]*map_resolution)] = map.data[x[j]+(y[j]*map_resolution)] +
-            l_p_occ - l_p_0;
+            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] =
+            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] + l_p_free - l_p_0;
           }
+          e_l_map_data = exp(l_map_data[x[j]+(y[j]*MAP_RESOLUTION)]);
+          map.data[x[j]+(y[j]*MAP_RESOLUTION)] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
         }
+        ROS_INFO("map.data updated");
     }
+    ROS_INFO("Updated map");
 }
 
 int main(int argc, char **argv)
@@ -242,12 +262,15 @@ int main(int argc, char **argv)
 
     while (ros::ok())
     {
+        ROS_INFO("ATTEMPTING TO BEGIN");
         loop_rate.sleep(); //Maintain the loop rate
+        ROS_INFO("ATTEMPTING TO RECEIVE");
         ros::spinOnce();   //Check for new messages
+
         //Main loop code goes here:
         update_map();
         map_publisher.publish(map);
-
+        ROS_INFO("PUBLISHING");
     }
 
     return 0;
