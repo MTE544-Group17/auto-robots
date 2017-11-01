@@ -136,8 +136,8 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/lab2_package_node.cpp)
 add_executable(turtlebot_example_node_lab2 src/turtlebot_example_node_lab2.cpp)
-# add_executable(turtlebot_mapping src/turtlebot_mapping.cpp)
 # add_executable(turtlebot_localization src/turtlebot_localization.cpp)
+add_executable(turtlebot_mapping src/turtlebot_mapping.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -158,9 +158,9 @@ add_executable(turtlebot_example_node_lab2 src/turtlebot_example_node_lab2.cpp)
 #   ${catkin_LIBRARIES}
 # )
 
-target_link_libraries(turtlebot_example_node_lab2
-  ${catkin_LIBRARIES}
-)
+## target_link_libraries(turtlebot_example_node_lab2
+##  ${catkin_LIBRARIES}
+## )
 
 
 #############

@@ -165,6 +165,7 @@ void random_particle_allocator() {
   }
 }
 
+<<<<<<< HEAD
 void move_particles() {
   for(auto &particle:particle_set) {
     // particle.yaw += dang * (1.0 + random_gen() * 0.08 - 0.04);
@@ -193,6 +194,12 @@ void move_particles() {
     // particle.y += dist * sin(particle.yaw);
   }
 }
+=======
+particle create_particle () {
+  particle p;
+  p.x = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
+  p.y = (double)(rand() * 1000000) / 1000000.0 * MAP_SIZE;
+>>>>>>> 1e8db057240960ff373bf573c6f98414bdb13c46
 
 double distanceToIPS(Particle p) {
   double dist = sqrt((p.x - ips_x) * (p.x - ips_x) + (p.y - ips_y) * (p.y - ips_y));
