@@ -135,7 +135,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/lab2_package_node.cpp)
-add_executable(turtlebot_example_node_lab2 src/turtlebot_example_node_lab2.cpp)
+## add_executable(turtlebot_example_node_lab2 src/turtlebot_example_node_lab2.cpp)
 add_executable(turtlebot_mapping src/turtlebot_mapping.cpp)
 
 ## Rename C++ executable without prefix
@@ -153,9 +153,9 @@ target_link_libraries(turtlebot_mapping
   ${catkin_LIBRARIES}
 )
 
-target_link_libraries(turtlebot_example_node_lab2
-  ${catkin_LIBRARIES}
-)
+## target_link_libraries(turtlebot_example_node_lab2
+##  ${catkin_LIBRARIES}
+## )
 
 
 #############

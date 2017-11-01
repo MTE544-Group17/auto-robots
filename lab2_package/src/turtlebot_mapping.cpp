@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-#define MAP_RESOLUTION    80.0
+#define MAP_RESOLUTION    81.0
 #define MAP_D    10.0
 
 double ips_x;
@@ -34,12 +34,14 @@ double angle_min;
 double angle_max;
 double angle_inc;
 double range_max;
+int map_data_origin;
 double p_occ = 0.7;
 double l_p_occ = log(p_occ/(1-p_occ));
 double p_free = 0.3;
 double l_p_free = log(p_free/(1-p_free));
 double p_0 = 0.5;
 double l_p_0 = log(p_0/(1-p_0));
+bool got_laser_ranges = false;
 std::vector<double> ranges(640);
 nav_msgs::OccupancyGrid map;
 std::vector<double> l_map_data;
@@ -90,7 +92,6 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
 //Callback function for the Position topic (SIMULATION)
 void pose_callback(const gazebo_msgs::ModelStates& msg)
 {
-      ROS_INFO("pose_callback");
     //Create tf broadcaster
     tf::TransformBroadcaster broadcaster;
 
@@ -106,7 +107,6 @@ void pose_callback(const gazebo_msgs::ModelStates& msg)
             tf::Transform(
               tf::Quaternion(ips_yaw, 0, 0), tf::Vector3(ips_x, ips_y, 0.0)),
               ros::Time::now(),"base_link", "map"));
-    ROS_INFO("pose_callback_complete");
 }
 
 //Callback function for the Position topic (LIVE)
@@ -131,13 +131,18 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
 
     for (int i=0; i<msg.ranges.size(); i++)
     {
-      ranges[i] = msg.ranges[i];
-      if (ranges[i]<msg.range_min||ranges[i]>msg.range_max)
+      if (msg.ranges[i]>msg.range_min&&msg.ranges[i]<msg.range_max)
       {
-        ranges[i]=range_max;
+        ranges[i] = msg.ranges[i];
+      }
+      else
+      {
+        //Garbage value, set to max so that update_map will discard
+        ranges[i] = range_max;
       }
     }
     ROS_INFO("laser_callback_complete");
+    got_laser_ranges = true;
 }
 
 void build_map()
@@ -151,6 +156,9 @@ void build_map()
     map.info.origin.position.x = -static_cast<double>(map.info.width) / 2 * map.info.resolution;
     map.info.origin.position.y = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
     map.info.origin.orientation.w = 1.0;
+
+    map_data_origin = (MAP_RESOLUTION)*((MAP_RESOLUTION-1)/2) + ((MAP_RESOLUTION-1)/2);
+
     map.data.assign(map.info.width * map.info.height, 50); // fill the map with 50/50 chance of occupancy
     ROS_INFO("%d", map.data.size());
     double log_odds = log(0.5/(1-0.5));
@@ -215,6 +223,15 @@ void update_map ()
         endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
         endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
         ROS_INFO("Endpoint rounded");
+        if (abs(endpoint_x)>int(MAP_RESOLUTION/2))
+        {
+          endpoint_x = int(MAP_RESOLUTION/2);
+        }
+        if (abs(endpoint_y)>int(MAP_RESOLUTION/2))
+        {
+          endpoint_y = int(MAP_RESOLUTION/2);
+        }
+        ROS_INFO("%d, %d, %d, %d", robot_x, robot_y,int(endpoint_x), int(endpoint_y));
         bresenham(robot_x, robot_y, int(endpoint_x), int(endpoint_y), x, y);
         ROS_INFO("bresenham run");
         //Calculated updated log odds for points defined in x and y vectors
@@ -223,16 +240,16 @@ void update_map ()
         {
           if (j==(x.size()-1) && ranges[i] < range_max)
           {
-            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] =
-            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] + l_p_occ - l_p_0;
+            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] =
+            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] + l_p_occ - l_p_0;
           }
           else
           {
-            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] =
-            l_map_data[x[j]+(y[j]*MAP_RESOLUTION)] + l_p_free - l_p_0;
+            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] =
+            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] + l_p_free - l_p_0;
           }
-          e_l_map_data = exp(l_map_data[x[j]+(y[j]*MAP_RESOLUTION)]);
-          map.data[x[j]+(y[j]*MAP_RESOLUTION)] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
+          e_l_map_data = exp(l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))]);
+          map.data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
         }
         ROS_INFO("map.data updated");
     }
@@ -268,7 +285,10 @@ int main(int argc, char **argv)
         ros::spinOnce();   //Check for new messages
 
         //Main loop code goes here:
-        update_map();
+        if (got_laser_ranges==true)
+        {
+          update_map();
+        }
         map_publisher.publish(map);
         ROS_INFO("PUBLISHING");
     }
