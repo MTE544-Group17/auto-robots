@@ -24,8 +24,9 @@
 #include <string>
 #include <vector>
 
-#define MAP_RESOLUTION    81.0
+#define MAP_RESOLUTION    51
 #define MAP_D    10.0
+#define SAMPLES 10
 
 double ips_x;
 double ips_y;
@@ -35,13 +36,13 @@ double angle_max;
 double angle_inc;
 double range_max;
 int map_data_origin;
-double p_occ = 0.7;
+double p_occ = 0.9;
 double l_p_occ = log(p_occ/(1-p_occ));
-double p_free = 0.3;
+double p_free = 0.4;
 double l_p_free = log(p_free/(1-p_free));
 double p_0 = 0.5;
 double l_p_0 = log(p_0/(1-p_0));
-std::vector<double> ranges(640);
+std::vector<double> ranges(SAMPLES);
 nav_msgs::OccupancyGrid map;
 std::vector<double> l_map_data;
 
@@ -98,7 +99,7 @@ void pose_callback(const gazebo_msgs::ModelStates& msg)
 
     ips_x = msg.pose[i].position.x ;
     ips_y = msg.pose[i].position.y ;
-    ips_yaw = tf::getYaw(msg.pose[i].orientation);\
+    ips_yaw = tf::getYaw(msg.pose[i].orientation);
 
     broadcaster.sendTransform(
           tf::StampedTransform(
@@ -133,9 +134,7 @@ void build_map()
     map_data_origin = (MAP_RESOLUTION)*((MAP_RESOLUTION-1)/2) + ((MAP_RESOLUTION-1)/2);
 
     map.data.assign(map.info.width * map.info.height, 50); // fill the map with 50/50 chance of occupancy
-    ROS_INFO("%d", map.data.size());
-    double log_odds = log(0.5/(1-0.5));
-    l_map_data.assign(map.data.size(), log_odds);
+    l_map_data.assign(map.data.size(), 0.0);
 }
 
 bool save_map(const std::string& name)
@@ -182,44 +181,57 @@ void update_map ()
     //Bound robot within map dimensions
     int robot_x = int(round((MAP_RESOLUTION/MAP_D)*ips_x));
     int robot_y = int(round((MAP_RESOLUTION/MAP_D)*ips_y));
-    ROS_INFO("NEW READING____________________________________________________________________");
-    for (int i=0; i<5; i++)
+    //ROS_INFO("NEW READING____________________________________________________________________");
+    for (int i=0; i<SAMPLES; i++)
     {
-        ROS_INFO("RANGE: %f", ranges[i]);
-        double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i));
-        double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i));
-        //Bound endpoint within map dimensions
-        endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
-        endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
+        if (ranges[i]>0)
+        {
+          //ROS_INFO("RANGE: %f", ranges[i]);
+          double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i*(640/SAMPLES)));
+          double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i*(640/SAMPLES)));
+          //Bound endpoint within map dimensions
+          endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
+          endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
 
-        if (abs(endpoint_x)>int(MAP_RESOLUTION/2))
-        {
-          endpoint_x = int(MAP_RESOLUTION/2);
-        }
-        if (abs(endpoint_y)>int(MAP_RESOLUTION/2))
-        {
-          endpoint_y = int(MAP_RESOLUTION/2);
-        }
-        ROS_INFO("X: %f", endpoint_x);
-        ROS_INFO("Y: %f", endpoint_y);
-        bresenham(robot_x, robot_y, int(endpoint_x), int(endpoint_y), x, y);
+          if (abs(endpoint_x)>int(MAP_RESOLUTION/2))
+          {
+            endpoint_x = int(MAP_RESOLUTION/2);
+          }
+          if (abs(endpoint_y)>int(MAP_RESOLUTION/2))
+          {
+            endpoint_y = int(MAP_RESOLUTION/2);
+          }
+          //ROS_INFO("X: %f", endpoint_x);
+          //ROS_INFO("Y: %f", endpoint_y);
+          bresenham(robot_x, robot_y, int(endpoint_x), int(endpoint_y), x, y);
 
-        //Calculated updated log odds for points defined in x and y vectors
-        double e_l_map_data;
-        for (int j=0; j<x.size(); j++)
-        {
-          if (j==(x.size()-1) && ranges[i] < range_max)
+          //Calculated updated log odds for points defined in x and y vectors
+          double e_l_map_data;
+          for (int j=0; j<x.size(); j++)
           {
-            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] =
-            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] + l_p_occ - l_p_0;
+            int index = map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION));
+            if (j==(x.size()-1) && ranges[i] < range_max)
+            {
+              //ROS_INFO("END INDEX:%d",index);
+              if (l_map_data[index]<50)
+              {
+                l_map_data[index] = l_map_data[index] + l_p_occ - l_p_0;
+              }
+              //ROS_INFO("LOG ODDS:%f",l_map_data[index]);
+            }
+            else
+            {
+              //ROS_INFO("MIDDLE INDEX:%d",map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION)));
+              if (l_map_data[index]>-50)
+              {
+                l_map_data[index] = l_map_data[index] + l_p_free - l_p_0;
+              }
+              //ROS_INFO("LOG ODDS:%f",l_map_data[index]);
+            }
+            e_l_map_data = exp(l_map_data[index]);
+            map.data[index] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
+            //ROS_INFO("EXP:%d",map.data[index]);
           }
-          else
-          {
-            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] =
-            l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] + l_p_free - l_p_0;
-          }
-          e_l_map_data = exp(l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))]);
-          map.data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
         }
     }
 }
@@ -230,20 +242,22 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
     angle_max = msg.angle_max;
     angle_inc = msg.angle_increment;
     range_max = msg.range_max;
-
-    for (int i=0; i<msg.ranges.size(); i++)
+    int j = 0;
+    for (int i=0; i<msg.ranges.size(); i+=(640/SAMPLES))
     {
-      if (msg.ranges[i]>msg.range_min&&msg.ranges[i]<msg.range_max)
+      if (msg.ranges[i]>=msg.range_min&&msg.ranges[i]<=msg.range_max)
       {
-        ranges[i] = msg.ranges[i];
+        ranges[j] = msg.ranges[i];
       }
       else
       {
-        //Garbage value, set to max so that update_map will discard
-        ranges[i] = range_max;
+        //Garbage value, set to -1
+        ranges[j] = -1;
       }
+      j++;
     }
     update_map();
+    save_map("1");
 }
 int main(int argc, char **argv)
 {
