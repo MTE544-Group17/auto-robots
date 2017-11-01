@@ -9,14 +9,17 @@
 //
 // //////////////////////////////////////////////////////////
 #include <ros/ros.h>
+#include <ros/console.h>
+
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <tf/transform_datatypes.h>
+#include <tf/transform_broadcaster.h>
 #include <gazebo_msgs/ModelStates.h>
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
-#include <tf/transform_broadcaster.h>
 
 #include <fstream>
 #include <cmath>
@@ -24,35 +27,45 @@
 #include <string>
 #include <vector>
 
-#define MAP_RESOLUTION    51
-#define MAP_D    10.0
-#define SAMPLES 10
+#define MAP_RESOLUTION    101
+#define MAP_D    15.0
+#define SAMPLES    10
+#define KINECT_BEAMS    640
+#define MAP_OCC_INIT    50
+
+#define P_OCC   0.9
+#define P_FREE    0.4
+#define P_0   0.5
+
+#define L_P_OCC    log(P_OCC/(1-P_OCC))
+#define L_P_FREE    log(P_FREE/(1-P_FREE))
+#define L_P_0    log(P_0/(1-P_0))
 
 double ips_x;
 double ips_y;
 double ips_yaw;
+
 double angle_min;
 double angle_max;
 double angle_inc;
 double range_max;
+
 int map_data_origin;
-double p_occ = 0.9;
-double l_p_occ = log(p_occ/(1-p_occ));
-double p_free = 0.4;
-double l_p_free = log(p_free/(1-p_free));
-double p_0 = 0.5;
-double l_p_0 = log(p_0/(1-p_0));
+
+// double L_P_OCC = log(P_OCC/(1-P_OCC));
+// double L_P_FREE = log(P_FREE/(1-P_FREE));
+// double L_P_0 = log(P_0/(1-P_0));
+
 std::vector<double> ranges(SAMPLES);
 nav_msgs::OccupancyGrid map;
 std::vector<double> l_map_data;
-
 
 short sgn(int x) { return x >= 0 ? 1 : -1; }
 
 //Bresenham line algorithm (pass empty vectors)
 // Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
 //        points (x, y) are stored in the x and y vector. x and y should be empty
-//	  vectors of integers and shold be defined where this function is called from.
+//	  vectors of integers and shold be defined where this function is called from. in CELL UNITS
 void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y)
 {
     int dx = abs(x1 - x0);
@@ -89,11 +102,8 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
 }
 
 //Callback function for the Position topic (SIMULATION)
-void pose_callback(const gazebo_msgs::ModelStates& msg)
+/*void pose_callback(const gazebo_msgs::ModelStates& msg)
 {
-    //Create tf broadcaster
-    tf::TransformBroadcaster broadcaster;
-
     int i;
     for(i = 0; i < msg.name.size(); i++) if(msg.name[i] == "mobile_base") break;
 
@@ -101,23 +111,41 @@ void pose_callback(const gazebo_msgs::ModelStates& msg)
     ips_y = msg.pose[i].position.y ;
     ips_yaw = tf::getYaw(msg.pose[i].orientation);
 
-    broadcaster.sendTransform(
-          tf::StampedTransform(
-            tf::Transform(
-              tf::Quaternion(ips_yaw, 0, 0), tf::Vector3(ips_x, ips_y, 0.0)),
-              ros::Time::now(),"base_link", "map"));
-}
+    //Create tf broadcaster
+    ROS_DEBUG("sending broadcaster");
+    static tf::TransformBroadcaster broadcaster;
+    tf::Transform transform;
+    transform.setOrigin( tf::Vector3(ips_x, ips_y, 0.0) );
+    tf::Quaternion q;
+    q.setRPY(0,0,ips_yaw);
+    transform.setRotation(q);
+    broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "base_link", "map"));
+
+    // static tf::TransformBroadcaster broadcaster;
+    // broadcaster.sendTransform(
+    //       tf::StampedTransform(
+    //         tf::Transform(
+    //           tf::Quaternion(ips_yaw, 0, 0), tf::Vector3(ips_x, ips_y, 0.0)),
+    //           ros::Time::now(),"base_link", "map"));
+}*/
 
 //Callback function for the Position topic (LIVE)
-/*
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 {
-
-	ips_x X = msg.pose.pose.position.x; // Robot X psotition
-	ips_y Y = msg.pose.pose.position.y; // Robot Y psotition
+  //ROS_INFO("GOT POSE DATA");
+	ips_x = msg.pose.pose.position.x; // Robot X psotition
+	ips_y = msg.pose.pose.position.y; // Robot Y psotition
 	ips_yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
-	ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", X, Y, Yaw);
-}*/
+	//ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", ips_x, ips_y, ips_yaw);
+  //ROS_DEBUG("sending broadcaster");
+  static tf::TransformBroadcaster broadcaster;
+  tf::Transform transform;
+  transform.setOrigin( tf::Vector3(ips_x, ips_y, 0.0) );
+  tf::Quaternion q;
+  q.setRPY(0,0,ips_yaw);
+  transform.setRotation(q);
+  broadcaster.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "base_link", "map"));
+}
 
 void build_map()
 {
@@ -131,9 +159,9 @@ void build_map()
     map.info.origin.position.y = -static_cast<double>(map.info.height) / 2 * map.info.resolution;
     map.info.origin.orientation.w = 1.0;
 
-    map_data_origin = (MAP_RESOLUTION)*((MAP_RESOLUTION-1)/2) + ((MAP_RESOLUTION-1)/2);
+    map_data_origin = (MAP_RESOLUTION)*( (MAP_RESOLUTION-1)/2 ) + ( (MAP_RESOLUTION-1)/2 );
 
-    map.data.assign(map.info.width * map.info.height, 50); // fill the map with 50/50 chance of occupancy
+    map.data.assign(map.info.width * map.info.height, MAP_OCC_INIT); // fill the map with 50/50 chance of occupancy
     l_map_data.assign(map.data.size(), 0.0);
 }
 
@@ -179,16 +207,16 @@ void update_map ()
     std::vector<int> x;
     std::vector<int> y;
     //Bound robot within map dimensions
-    int robot_x = int(round((MAP_RESOLUTION/MAP_D)*ips_x));
-    int robot_y = int(round((MAP_RESOLUTION/MAP_D)*ips_y));
+    int robot_x = int( round( (MAP_RESOLUTION/MAP_D)*ips_x ) );
+    int robot_y = int( round( (MAP_RESOLUTION/MAP_D)*ips_y ) );
     //ROS_INFO("NEW READING____________________________________________________________________");
     for (int i=0; i<SAMPLES; i++)
     {
         if (ranges[i]>0)
         {
           //ROS_INFO("RANGE: %f", ranges[i]);
-          double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i*(640/SAMPLES)));
-          double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i*(640/SAMPLES)));
+          double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i*(KINECT_BEAMS/SAMPLES)));
+          double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i*(KINECT_BEAMS/SAMPLES)));
           //Bound endpoint within map dimensions
           endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
           endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
@@ -215,7 +243,7 @@ void update_map ()
               //ROS_INFO("END INDEX:%d",index);
               if (l_map_data[index]<50)
               {
-                l_map_data[index] = l_map_data[index] + l_p_occ - l_p_0;
+                l_map_data[index] = l_map_data[index] + L_P_OCC - L_P_0;
               }
               //ROS_INFO("LOG ODDS:%f",l_map_data[index]);
             }
@@ -224,7 +252,7 @@ void update_map ()
               //ROS_INFO("MIDDLE INDEX:%d",map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION)));
               if (l_map_data[index]>-50)
               {
-                l_map_data[index] = l_map_data[index] + l_p_free - l_p_0;
+                l_map_data[index] = l_map_data[index] + L_P_FREE - L_P_0;
               }
               //ROS_INFO("LOG ODDS:%f",l_map_data[index]);
             }
@@ -243,7 +271,7 @@ void laser_callback(const sensor_msgs::LaserScan& msg)
     angle_inc = msg.angle_increment;
     range_max = msg.range_max;
     int j = 0;
-    for (int i=0; i<msg.ranges.size(); i+=(640/SAMPLES))
+    for (int i=0; i<msg.ranges.size(); i+=(KINECT_BEAMS/SAMPLES))
     {
       if (msg.ranges[i]>=msg.range_min&&msg.ranges[i]<=msg.range_max)
       {
@@ -263,10 +291,16 @@ int main(int argc, char **argv)
 {
 	  //Initialize the ROS framework
     ros::init(argc,argv,"main_control");
+    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) ) {
+        ros::console::notifyLoggerLevelsChanged();
+    }
+
+    //ROS_DEBUG("Debug Started");
     ros::NodeHandle n;
 
     //Subscribe to the desired topics and assign callbacks
-    ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
+    //ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
+    ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
     ros::Subscriber laser_sub = n.subscribe("/scan", 1, laser_callback);
 
     //Setup topics that this node will Publish to
