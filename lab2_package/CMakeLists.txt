@@ -150,17 +150,17 @@ add_executable(turtlebot_mapping src/turtlebot_mapping.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(turtlebot_mapping
-#   ${catkin_LIBRARIES}
-# )
+target_link_libraries(turtlebot_mapping
+  ${catkin_LIBRARIES}
+)
 
 # target_link_libraries(turtlebot_localization
 #   ${catkin_LIBRARIES}
 # )
 
-## target_link_libraries(turtlebot_example_node_lab2
-##  ${catkin_LIBRARIES}
-## )
+target_link_libraries(turtlebot_example_node_lab2
+ ${catkin_LIBRARIES}
+)
 
 
 #############
