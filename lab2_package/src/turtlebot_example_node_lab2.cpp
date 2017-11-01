@@ -182,7 +182,7 @@ void move_particles() {
     normal_distribution<double> distro_ang(0.0, dang * 0.2);
     particle.yaw += dang + distro_ang(generator);
 
-    double dist = sqrt(dx*dx + dy*dy);
+    double dist = abs(sqrt(dx*dx + dy*dy));
     // normal_distribution<double> distro_dist(0.0, dist * 0.5);
     normal_distribution<double> distro_dist(0.0, dist * 0.8);
     dist += distro_dist(generator);
@@ -420,8 +420,8 @@ int main(int argc, char **argv)
       marker_pub.publish(base_line);
       marker_pub.publish(base_point);
 
-      // ROS_INFO("IPS: (%f, %f, %f)", ips_x, ips_y, ips_yaw);
-      // ROS_INFO("Predicted: (%f, %f, %f)", predicted_x, predicted_y, predicted_yaw);
+      ROS_INFO("IPS: (%f, %f, %f)", ips_x, ips_y, ips_yaw);
+      ROS_INFO("Predicted: (%f, %f, %f)", predicted_x, predicted_y, predicted_yaw);
 
     	velocity_publisher.publish(vel); // Publish the command velocity
       // ROS_INFO("LOOP END");
