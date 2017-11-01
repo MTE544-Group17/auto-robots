@@ -41,7 +41,6 @@ double p_free = 0.3;
 double l_p_free = log(p_free/(1-p_free));
 double p_0 = 0.5;
 double l_p_0 = log(p_0/(1-p_0));
-bool got_laser_ranges = false;
 std::vector<double> ranges(640);
 nav_msgs::OccupancyGrid map;
 std::vector<double> l_map_data;
@@ -55,7 +54,6 @@ short sgn(int x) { return x >= 0 ? 1 : -1; }
 //	  vectors of integers and shold be defined where this function is called from.
 void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y)
 {
-    ROS_INFO("starting bresenham");
     int dx = abs(x1 - x0);
     int dy = abs(y1 - y0);
     int dx2 = x1 - x0;
@@ -120,31 +118,6 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 	ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", X, Y, Yaw);
 }*/
 
-//Callback function for the Laser Scan data topic
-void laser_callback(const sensor_msgs::LaserScan& msg)
-{
-    ROS_INFO("laser_callback");
-    angle_min = msg.angle_min;
-    angle_max = msg.angle_max;
-    angle_inc = msg.angle_increment;
-    range_max = msg.range_max;
-
-    for (int i=0; i<msg.ranges.size(); i++)
-    {
-      if (msg.ranges[i]>msg.range_min&&msg.ranges[i]<msg.range_max)
-      {
-        ranges[i] = msg.ranges[i];
-      }
-      else
-      {
-        //Garbage value, set to max so that update_map will discard
-        ranges[i] = range_max;
-      }
-    }
-    ROS_INFO("laser_callback_complete");
-    got_laser_ranges = true;
-}
-
 void build_map()
 {
     // map.header.frame_id = ros::this_node::getName() + "/local_map";
@@ -204,25 +177,21 @@ bool save_map(const std::string& name)
 
 void update_map ()
 {
-    ROS_INFO("Updating map");
-    std::vector<int> x(1);
-    std::vector<int> y(1);
-    ROS_INFO("Vectors defined");
+    std::vector<int> x;
+    std::vector<int> y;
     //Bound robot within map dimensions
     int robot_x = int(round((MAP_RESOLUTION/MAP_D)*ips_x));
     int robot_y = int(round((MAP_RESOLUTION/MAP_D)*ips_y));
-    ROS_INFO("Robot position defined");
-
-    for (int i=0; i<ranges.size(); i++)
+    ROS_INFO("NEW READING____________________________________________________________________");
+    for (int i=0; i<5; i++)
     {
-        ROS_INFO("%d",i);
-        double endpoint_x = robot_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i));
-        double endpoint_y = robot_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i));
-        ROS_INFO("Endpoint defined");
+        ROS_INFO("RANGE: %f", ranges[i]);
+        double endpoint_x = ips_x + ranges[i]*cos(ips_yaw+(angle_min+angle_inc*i));
+        double endpoint_y = ips_y + ranges[i]*sin(ips_yaw+(angle_min+angle_inc*i));
         //Bound endpoint within map dimensions
         endpoint_x = round((MAP_RESOLUTION/MAP_D)*endpoint_x);
         endpoint_y = round((MAP_RESOLUTION/MAP_D)*endpoint_y);
-        ROS_INFO("Endpoint rounded");
+
         if (abs(endpoint_x)>int(MAP_RESOLUTION/2))
         {
           endpoint_x = int(MAP_RESOLUTION/2);
@@ -231,9 +200,10 @@ void update_map ()
         {
           endpoint_y = int(MAP_RESOLUTION/2);
         }
-        ROS_INFO("%d, %d, %d, %d", robot_x, robot_y,int(endpoint_x), int(endpoint_y));
+        ROS_INFO("X: %f", endpoint_x);
+        ROS_INFO("Y: %f", endpoint_y);
         bresenham(robot_x, robot_y, int(endpoint_x), int(endpoint_y), x, y);
-        ROS_INFO("bresenham run");
+
         //Calculated updated log odds for points defined in x and y vectors
         double e_l_map_data;
         for (int j=0; j<x.size(); j++)
@@ -251,11 +221,30 @@ void update_map ()
           e_l_map_data = exp(l_map_data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))]);
           map.data[map_data_origin+(x[j]-(y[j]*MAP_RESOLUTION))] = int(round(100*(e_l_map_data/(1+e_l_map_data))));
         }
-        ROS_INFO("map.data updated");
     }
-    ROS_INFO("Updated map");
 }
+//Callback function for the Laser Scan data topic
+void laser_callback(const sensor_msgs::LaserScan& msg)
+{
+    angle_min = msg.angle_min;
+    angle_max = msg.angle_max;
+    angle_inc = msg.angle_increment;
+    range_max = msg.range_max;
 
+    for (int i=0; i<msg.ranges.size(); i++)
+    {
+      if (msg.ranges[i]>msg.range_min&&msg.ranges[i]<msg.range_max)
+      {
+        ranges[i] = msg.ranges[i];
+      }
+      else
+      {
+        //Garbage value, set to max so that update_map will discard
+        ranges[i] = range_max;
+      }
+    }
+    update_map();
+}
 int main(int argc, char **argv)
 {
 	  //Initialize the ROS framework
@@ -279,18 +268,9 @@ int main(int argc, char **argv)
 
     while (ros::ok())
     {
-        ROS_INFO("ATTEMPTING TO BEGIN");
         loop_rate.sleep(); //Maintain the loop rate
-        ROS_INFO("ATTEMPTING TO RECEIVE");
         ros::spinOnce();   //Check for new messages
-
-        //Main loop code goes here:
-        if (got_laser_ranges==true)
-        {
-          update_map();
-        }
         map_publisher.publish(map);
-        ROS_INFO("PUBLISHING");
     }
 
     return 0;
