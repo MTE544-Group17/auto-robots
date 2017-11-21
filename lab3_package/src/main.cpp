@@ -11,7 +11,6 @@
 // //////////////////////////////////////////////////////////
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <nav_msgs/Odometry.h>
 #include <geometry_msgs/Twist.h>
 #include <tf/transform_datatypes.h>
 #include <gazebo_msgs/ModelStates.h>
@@ -114,7 +113,6 @@ int main(int argc, char **argv)
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
-    ros::Subscriber odom_sub = n.subscribe("/odom", 1, odometry_callback);
 
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
