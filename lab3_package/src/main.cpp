@@ -209,13 +209,39 @@ void connectNearestNeighbours() {
     }
   }
 
-  for(int pIndex = 0; pIndex < pointMap.size(); pIndex++) {
-    ROS_INFO("Point %d : [%d %d %d %d %d]", pIndex, pointMap[pIndex].nearestNeighbours[0], pointMap[pIndex].nearestNeighbours[1], pointMap[pIndex].nearestNeighbours[2], pointMap[pIndex].nearestNeighbours[3], pointMap[pIndex].nearestNeighbours[4]);
-  }
+  // for(int pIndex = 0; pIndex < pointMap.size(); pIndex++) {
+  //   ROS_INFO("Point %d : [%d %d %d %d %d]", pIndex, pointMap[pIndex].nearestNeighbours[0], pointMap[pIndex].nearestNeighbours[1], pointMap[pIndex].nearestNeighbours[2], pointMap[pIndex].nearestNeighbours[3], pointMap[pIndex].nearestNeighbours[4]);
+  // }
 }
 
 void removeCollisionPaths() {
-  
+  for(auto &point:pointMap) {
+    vector<int>::iterator neighbour = point.nearestNeighbours.begin();
+
+    while(neighbour != point.nearestNeighbours.end()) {
+      vector<int> x;
+      vector<int> y;
+
+      bresenham(point.x, point.y, pointMap[*neighbour].x, pointMap[*neighbour].y, x, y);
+
+      bool pathCollides = false;
+      for(int i = 0; i < x.size(); i++) {
+        if(collisionMap[MAP_SIZE*y[i] + x[i]] > 0) {
+          pathCollides = true;
+        }
+      }
+
+      if(pathCollides) {
+        neighbour = point.nearestNeighbours.erase(neighbour);
+      } else {
+        neighbour++;
+      }
+    }
+  }
+
+  for(int pIndex = 0; pIndex < pointMap.size(); pIndex++) {
+    ROS_INFO("$ Point %d : [%d]", pIndex, (int)pointMap[pIndex].nearestNeighbours.size());
+  }
 }
 
 int main(int argc, char **argv)
@@ -282,13 +308,14 @@ int main(int argc, char **argv)
         generateRandomMap();
         removeCollisionPoints();
         connectNearestNeighbours();
+        removeCollisionPaths();
         mapReady = false;
 
         vector<geometry_msgs::Point> displayPointsVec;
         for(auto &point:pointMap) {
           geometry_msgs::Point p;
-          p.x = point.x - 50;
-          p.y = point.y - 50;
+          p.x = point.x - MAP_SIZE/2;
+          p.y = point.y - MAP_SIZE/2;
           displayPointsVec.push_back(p);
         }
         points.points = displayPointsVec;
@@ -297,8 +324,8 @@ int main(int argc, char **argv)
         for(int i =0; i < MAP_SIZE * MAP_SIZE; i++) {
           if(collisionMap[i] > 0) {
             geometry_msgs::Point p;
-            p.x = i%100 - 50;
-            p.y = (int) (i /100) - 50;
+            p.x = i%MAP_SIZE - MAP_SIZE/2;
+            p.y = (int) (i /MAP_SIZE) - MAP_SIZE/2;
             displayCollisionPointsVec.push_back(p);
           }
         }
