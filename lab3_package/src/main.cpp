@@ -26,8 +26,8 @@
 
 const int MAP_SIZE = 100;
 const int ROBOT_WIDTH = 3;
-const int NUM_POINTS = 400;
-const int NUM_CONNECTIONS = 8;
+const int NUM_POINTS = 1000;
+const int NUM_CONNECTIONS = 5;
 
 using namespace std;
 
@@ -285,15 +285,31 @@ int main(int argc, char **argv)
     collisionPoints.ns = "collisionPoints";
     collisionPoints.action = visualization_msgs::Marker::ADD;
     collisionPoints.type = visualization_msgs::Marker::POINTS;
-    collisionPoints.id = 1;
+    collisionPoints.id = 2;
 
-    collisionPoints.scale.x = 0.8f;
-    collisionPoints.scale.y = 0.8f;
+    collisionPoints.scale.x = 1.2f;
+    collisionPoints.scale.y = 1.2f;
 
     collisionPoints.color.r = 0.8f;
     collisionPoints.color.g = 0.8f;
     collisionPoints.color.b = 1.0f;
     collisionPoints.color.a = 1.0f;
+
+    visualization_msgs::Marker allPaths;
+    allPaths.header.frame_id = "/my_frame";
+    allPaths.header.stamp = ros::Time::now();
+    allPaths.ns = "allPaths";
+    allPaths.action = visualization_msgs::Marker::ADD;
+    allPaths.type = visualization_msgs::Marker::LINE_LIST;
+    allPaths.id = 3;
+
+    allPaths.scale.x = 0.3f;
+    allPaths.scale.y = 0.3f;
+
+    allPaths.color.r = 0.0f;
+    allPaths.color.g = 1.0f;
+    allPaths.color.b = 0.0f;
+    allPaths.color.a = 1.0f;
 
     while (ros::ok())
     {
@@ -309,6 +325,20 @@ int main(int argc, char **argv)
         removeCollisionPoints();
         connectNearestNeighbours();
         removeCollisionPaths();
+
+        for(auto &point:pointMap) {
+          geometry_msgs::Point p1;
+          p1.x = point.x - MAP_SIZE/2;
+          p1.y = point.y - MAP_SIZE/2;
+          for(auto &neighbour:point.nearestNeighbours) {
+            geometry_msgs::Point p2;
+            p2.x = pointMap[neighbour].x - MAP_SIZE/2;
+            p2.y = pointMap[neighbour].y - MAP_SIZE/2;
+            allPaths.points.push_back(p1);
+            allPaths.points.push_back(p2);
+          }
+        }
+
         mapReady = false;
 
         vector<geometry_msgs::Point> displayPointsVec;
@@ -332,6 +362,7 @@ int main(int argc, char **argv)
         collisionPoints.points = displayCollisionPointsVec;
       }
 
+      marker_pub.publish(allPaths);
       marker_pub.publish(points);
       marker_pub.publish(collisionPoints);
 
