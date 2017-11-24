@@ -26,7 +26,7 @@
 
 const int MAP_SIZE = 100;
 const int ROBOT_WIDTH = 3;
-const int NUM_POINTS = 1000;
+const int NUM_POINTS = 1400;
 const int NUM_CONNECTIONS = 5;
 
 using namespace std;
@@ -39,6 +39,8 @@ struct Point {
   int x = 0;
   int y = 0;
   vector<int> nearestNeighbours;
+  bool visited = false;
+  int parentNodeIdex;
 };
 
 struct Neighbour {
@@ -133,6 +135,10 @@ void bresenham(int x0, int y0, int x1, int y1, vector<int>& x, vector<int>& y) {
     }
 }
 
+/***************************************
+PRM
+***************************************/
+
 vector<Point> pointMap;
 
 void generateRandomMap() {
@@ -186,7 +192,7 @@ void removeCollisionPoints() {
 }
 
 bool compareByDistance(const Neighbour &a, const Neighbour &b) {
-    return a.dist < b.dist;
+  return a.dist < b.dist;
 }
 
 void connectNearestNeighbours() {
@@ -203,9 +209,13 @@ void connectNearestNeighbours() {
     }
 
     sort(allNeighbours.begin(), allNeighbours.end(), compareByDistance);
-
-    for(int i = 0; i < NUM_CONNECTIONS; i++) {
-      pointMap[pIndex].nearestNeighbours.push_back(allNeighbours[i].pointIndex);
+    int iterations = NUM_CONNECTIONS;
+    for(int i = 0; i < iterations; i++) {
+      if(allNeighbours[i].dist > 1) {
+        pointMap[pIndex].nearestNeighbours.push_back(allNeighbours[i].pointIndex);
+      } else {
+        iterations++;
+      }
     }
   }
 
@@ -239,10 +249,115 @@ void removeCollisionPaths() {
     }
   }
 
-  for(int pIndex = 0; pIndex < pointMap.size(); pIndex++) {
-    ROS_INFO("$ Point %d : [%d]", pIndex, (int)pointMap[pIndex].nearestNeighbours.size());
+  // for(int pIndex = 0; pIndex < pointMap.size(); pIndex++) {
+  //   ROS_INFO("$ Point %d : [%d paths]", pIndex, (int)pointMap[pIndex].nearestNeighbours.size());
+  // }
+}
+
+/***************************************
+A * Path Search
+***************************************/
+
+int findClosestPoint(int x, int y) {
+  vector<Neighbour> allNeighbours;
+
+  for(int nIndex = 0; nIndex < pointMap.size(); nIndex++) {
+    Neighbour n;
+    n.pointIndex = nIndex;
+    n.dist = sqrt(pow(pointMap[nIndex].x - x, 2) + pow(pointMap[nIndex].y - y, 2));
+    allNeighbours.push_back(n);
+  }
+
+  sort(allNeighbours.begin(), allNeighbours.end(), compareByDistance);
+
+  return allNeighbours[0].pointIndex;
+}
+
+void prepareForTraversal() {
+  for(auto & point:pointMap) {
+    point.visited = false;
+    point.parentNodeIdex = -2;
   }
 }
+
+struct PathPoint {
+  int x;
+  int y;
+  int index;
+  double cost;
+  double heuristicCost;
+};
+
+void pushOntoStack(vector<PathPoint> * stack, int nodeIndex, double cost, int goalNode) {
+  PathPoint p;
+
+  p.x = pointMap[nodeIndex].x;
+  p.y = pointMap[nodeIndex].y;
+  p.index = nodeIndex;
+  p.cost = cost;
+  p.heuristicCost = sqrt(pow(p.x - pointMap[goalNode].x, 2) + pow(p.y - pointMap[goalNode].y, 2));
+
+  pointMap[nodeIndex].visited = true;
+  ROS_INFO("Right before push # %d", nodeIndex);
+
+  stack->push_back(p);
+  ROS_INFO("Pushed to stack # %d", nodeIndex);
+}
+
+bool compareByFullCost(const PathPoint &a, const PathPoint &b) {
+  return (a.cost + a.heuristicCost) > (b.cost + b.heuristicCost);
+}
+
+vector<int> getShortestPath(int startNode, int goalNode) {
+  prepareForTraversal();
+
+  vector<int> shortestPath;
+  vector<PathPoint> stack;
+
+  pointMap[startNode].parentNodeIdex = -1;
+  pushOntoStack(&stack, startNode, 0.0f, goalNode);
+
+  while(!stack.empty()) {
+    ROS_INFO("Start loop of size : %d ", (int) stack.size());
+    sort(stack.begin(), stack.end(), compareByFullCost);
+    PathPoint currentNode = stack.back();
+    stack.pop_back();
+    ROS_INFO("Popped, size : %d ", (int) stack.size());
+
+    if(currentNode.index == goalNode) {
+      ROS_INFO("Found goal node!");
+      shortestPath.push_back(currentNode.index);
+      int parent = pointMap[currentNode.index].parentNodeIdex;
+      ROS_INFO("Starting looping result");
+      do {
+        ROS_INFO("Looping parent %d", parent);
+        shortestPath.push_back(parent);
+        parent = pointMap[parent].parentNodeIdex;
+      } while (parent != -1);
+
+      ROS_INFO("Found path of length : %d", (int) (shortestPath.size()));
+      return shortestPath;
+    }
+
+    for(auto & neighbour:pointMap[currentNode.index].nearestNeighbours) {
+      ROS_INFO("Looping over neighbours");
+      if(!pointMap[neighbour].visited) {
+        pointMap[neighbour].parentNodeIdex = currentNode.index;
+        double interNodeCost = sqrt(pow(currentNode.x - pointMap[neighbour].x, 2) + pow(currentNode.y - pointMap[neighbour].y, 2));
+        ROS_INFO("Pushing on to stack");
+        pushOntoStack(&stack, neighbour, currentNode.cost + interNodeCost, goalNode);
+      }
+    }
+
+    ROS_INFO("Looping ~~");
+  }
+
+  ROS_INFO("Exited *****");
+  shortestPath.clear();
+  return shortestPath;
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -272,6 +387,7 @@ int main(int argc, char **argv)
     points.action = visualization_msgs::Marker::ADD;
     points.type = visualization_msgs::Marker::POINTS;
     points.id = 1;
+    points.points.clear();
 
     points.scale.x = 0.8f;
     points.scale.y = 0.8f;
@@ -286,6 +402,7 @@ int main(int argc, char **argv)
     collisionPoints.action = visualization_msgs::Marker::ADD;
     collisionPoints.type = visualization_msgs::Marker::POINTS;
     collisionPoints.id = 2;
+    collisionPoints.points.clear();
 
     collisionPoints.scale.x = 1.2f;
     collisionPoints.scale.y = 1.2f;
@@ -295,13 +412,31 @@ int main(int argc, char **argv)
     collisionPoints.color.b = 1.0f;
     collisionPoints.color.a = 1.0f;
 
+    visualization_msgs::Marker waypointMarkers;
+    waypointMarkers.header.frame_id = "/my_frame";
+    waypointMarkers.header.stamp = ros::Time::now();
+    waypointMarkers.ns = "waypointMarkers";
+    waypointMarkers.action = visualization_msgs::Marker::ADD;
+    waypointMarkers.type = visualization_msgs::Marker::POINTS;
+    waypointMarkers.id = 3;
+    waypointMarkers.points.clear();
+
+    waypointMarkers.scale.x = 1.8f;
+    waypointMarkers.scale.y = 1.8f;
+
+    waypointMarkers.color.r = 0.0f;
+    waypointMarkers.color.g = 1.0f;
+    waypointMarkers.color.b = 0.0f;
+    waypointMarkers.color.a = 1.0f;
+
     visualization_msgs::Marker allPaths;
     allPaths.header.frame_id = "/my_frame";
     allPaths.header.stamp = ros::Time::now();
     allPaths.ns = "allPaths";
     allPaths.action = visualization_msgs::Marker::ADD;
     allPaths.type = visualization_msgs::Marker::LINE_LIST;
-    allPaths.id = 3;
+    allPaths.id = 4;
+    allPaths.points.clear();
 
     allPaths.scale.x = 0.3f;
     allPaths.scale.y = 0.3f;
@@ -309,7 +444,25 @@ int main(int argc, char **argv)
     allPaths.color.r = 0.0f;
     allPaths.color.g = 1.0f;
     allPaths.color.b = 0.0f;
-    allPaths.color.a = 1.0f;
+    allPaths.color.a = 0.1f;
+
+    visualization_msgs::Marker traversedPaths;
+    traversedPaths.header.frame_id = "/my_frame";
+    traversedPaths.header.stamp = ros::Time::now();
+    traversedPaths.ns = "traversedPaths";
+    traversedPaths.action = visualization_msgs::Marker::ADD;
+    traversedPaths.type = visualization_msgs::Marker::LINE_LIST;
+    traversedPaths.id = 5;
+
+    traversedPaths.scale.x = 0.8f;
+    traversedPaths.scale.y = 0.8f;
+
+    traversedPaths.color.r = 1.0f;
+    traversedPaths.color.g = 1.0f;
+    traversedPaths.color.b = 1.0f;
+    traversedPaths.color.a = 1.0f;
+
+    double waypoints[12] = {1.0, 2.0, 0.0,   8.0, 8.0, 3.14,    8.0, 8.0, 3.14,    8.0, 8.0, 3.14};
 
     while (ros::ok())
     {
@@ -319,12 +472,57 @@ int main(int argc, char **argv)
     	//Main loop code goes here:
     	// vel.linear.x = 1.0; // set linear speed
     	// vel.angular.z = 1.0; // set angular speed
-
+      ROS_INFO("Looping...");
       if(mapReady) {
         generateRandomMap();
         removeCollisionPoints();
         connectNearestNeighbours();
         removeCollisionPaths();
+
+        vector<int> waypointNodes;
+        for(int i = 0; i < 12; i += 3) {
+          int index = findClosestPoint((int) (waypoints[i] * 10), (int) (waypoints[i+1] * 10));
+          waypointNodes.push_back(index);
+        }
+
+
+        // for(int i = 0; i < waypointNodes.size(); i++) {
+          // vector<int> shortestPath = getShortestPath(waypointNodes[i], waypointNodes[i+1]);
+          vector<int> shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
+          if(shortestPath.empty()) {
+            mapReady = false;
+            ROS_INFO("Path not found");
+            continue;
+          }
+          traversedPaths.points.clear();
+
+          for(int j = 0; j < shortestPath.size() - 1; j++) {
+            geometry_msgs::Point p1;
+            geometry_msgs::Point p2;
+
+            p1.x = pointMap[shortestPath[j]].x - MAP_SIZE/2;
+            p1.y = pointMap[shortestPath[j]].y - MAP_SIZE/2;
+            traversedPaths.points.push_back(p1);
+            p2.x = pointMap[shortestPath[j+1]].x - MAP_SIZE/2;
+            p2.y = pointMap[shortestPath[j+1]].y - MAP_SIZE/2;
+            traversedPaths.points.push_back(p2);
+          }
+
+          for(auto &p:traversedPaths.points) {
+            ROS_INFO("Path Node : [%f, %f]", p.x, p.y);
+          }
+        // }
+
+
+
+        // geometry_msgs::Point wp1;
+        // wp1.x = 20 - MAP_SIZE/2;
+        // wp1.y = 10 - MAP_SIZE/2;
+        // waypointMarkers.points.push_back(wp1);
+        // geometry_msgs::Point wp2;
+        // wp2.x = 80 - MAP_SIZE/2;
+        // wp2.y = 10 - MAP_SIZE/2;
+        // waypointMarkers.points.push_back(wp2);
 
         for(auto &point:pointMap) {
           geometry_msgs::Point p1;
@@ -360,13 +558,16 @@ int main(int argc, char **argv)
           }
         }
         collisionPoints.points = displayCollisionPointsVec;
+
       }
 
       marker_pub.publish(allPaths);
+      marker_pub.publish(traversedPaths);
       marker_pub.publish(points);
       marker_pub.publish(collisionPoints);
+      marker_pub.publish(waypointMarkers);
 
-    	velocity_publisher.publish(vel); // Publish the command velocity
+    	// velocity_publisher.publish(vel); // Publish the command velocity
     }
 
     return 0;
