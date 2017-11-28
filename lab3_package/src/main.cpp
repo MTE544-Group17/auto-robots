@@ -13,6 +13,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <tf/transform_datatypes.h>
+#include <tf/transform_broadcaster.h>
 #include <gazebo_msgs/ModelStates.h>
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
@@ -21,8 +22,12 @@
 // #include <string>
 // #include <ctime>
 // #include <chrono>
-
 #include <cmath>
+
+#define WAYPOINT_THRESHOLD    0.1
+#define THETA_THRESHOLD    0.01
+#define P_CONTROL    2.0
+#define MAP_DIM    10.0
 
 const int MAP_SIZE = 100;
 const int ROBOT_WIDTH = 3;
@@ -30,6 +35,14 @@ const int NUM_POINTS = 1400;
 const int NUM_CONNECTIONS = 5;
 
 using namespace std;
+vector<int> shortestPath;
+
+float line_segment_x = 0;
+float line_segment_y = 0;
+float line_segment_x_final = 0;
+float line_segment_y_final = 0;
+float dist_error = 0;
+int current_index = 0;
 
 int collisionMap[MAP_SIZE * MAP_SIZE];
 
@@ -48,7 +61,7 @@ struct Neighbour {
   double dist;
 };
 
-ros::Publisher pose_publisher;
+// ros::Publisher pose_publisher;
 ros::Publisher marker_pub;
 
 double ips_x;
@@ -66,19 +79,40 @@ void pose_callback(const gazebo_msgs::ModelStates& msg) {
   int i;
   for(i = 0; i < msg.name.size(); i++) if(msg.name[i] == "mobile_base") break;
 
-  ips_x = msg.pose[i].position.x ;
-  ips_y = msg.pose[i].position.y ;
+  ips_x = msg.pose[i].position.x;
+  ips_y = msg.pose[i].position.y;
   ips_yaw = tf::getYaw(msg.pose[i].orientation);
+  ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", ips_x, ips_y, ips_yaw);
+
+  //Create tf broadcaster
+  ROS_DEBUG("sending broadcaster");
+  static tf::TransformBroadcaster broadcaster_map;
+  tf::Transform transform_map;
+  transform_map.setOrigin( tf::Vector3(ips_x, ips_y, 0.0) );
+  tf::Quaternion q;
+  q.setRPY(0,0,ips_yaw);
+  transform_map.setRotation(q);
+  broadcaster_map.sendTransform(tf::StampedTransform(transform_map, ros::Time::now(), "base_link", "map"));
+
+    //Create tf broadcaster
+  ROS_DEBUG("sending broadcaster");
+  static tf::TransformBroadcaster broadcaster_vis;
+  tf::Transform transform_vis;
+  transform_vis.setOrigin( tf::Vector3(ips_x, ips_y, 0.0) );
+  tf::Quaternion w;
+  w.setRPY(0,0,ips_yaw);
+  transform_vis.setRotation(w);
+  broadcaster_map.sendTransform(tf::StampedTransform(transform_vis, ros::Time::now(), "base_link", "visualization_marker"));
 }
 
 //Callback function for the Position topic (LIVE)
 /*
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped& msg)
 {
-	ips_x X = msg.pose.pose.position.x; // Robot X psotition
-	ips_y Y = msg.pose.pose.position.y; // Robot Y psotition
-	ips_yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
-	ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", X, Y, Yaw);
+  ips_x X = msg.pose.pose.position.x; // Robot X psotition
+  ips_y Y = msg.pose.pose.position.y; // Robot Y psotition
+  ips_yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+  ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", X, Y, Yaw);
 }*/
 
 
@@ -98,7 +132,7 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 //Bresenham line algorithm (pass empty vectors)
 // Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
 //        points (x, y) are stored in the x and y vector. x and y should be empty
-//	  vectors of integers and shold be defined where this function is called from.
+//    vectors of integers and shold be defined where this function is called from.
 void bresenham(int x0, int y0, int x1, int y1, vector<int>& x, vector<int>& y) {
 
     int dx = abs(x1 - x0);
@@ -357,21 +391,40 @@ vector<int> getShortestPath(int startNode, int goalNode) {
   return shortestPath;
 }
 
+/***************************************
+Robot Movement Controller
+***************************************/
 
+float theta_error(float line_segment_y, float line_segment_x) {
+  float theta_ref = atan2(line_segment_y, line_segment_x);
+  float theta_error = theta_ref - ips_yaw;
+
+  if(theta_error > M_PI){
+    theta_error = theta_error - 2*M_PI;
+  }
+  else if (theta_error < -M_PI) {
+    theta_error = theta_error + 2*M_PI;
+  }
+  return theta_error;
+}
 
 int main(int argc, char **argv)
 {
-	  //Initialize the ROS framework
+    //Initialize the ROS framework
     ros::init(argc,argv,"main_control");
+    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) ) {
+        ros::console::notifyLoggerLevelsChanged();
+    }
     ros::NodeHandle n;
 
     //Subscribe to the desired topics and assign callbacks
+    // ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
     ros::Subscriber pose_sub = n.subscribe("/gazebo/model_states", 1, pose_callback);
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
 
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
-    pose_publisher = n.advertise<geometry_msgs::PoseStamped>("/pose", 1, true);
+    // pose_publisher = n.advertise<geometry_msgs::PoseStamped>("/pose", 1, true);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
 
     //Velocity control variable
@@ -381,7 +434,7 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(20);    //20Hz update rate
 
     visualization_msgs::Marker points;
-    points.header.frame_id = "/my_frame";
+    points.header.frame_id = "/map";
     points.header.stamp = ros::Time::now();
     points.ns = "points";
     points.action = visualization_msgs::Marker::ADD;
@@ -396,7 +449,7 @@ int main(int argc, char **argv)
     points.color.a = 1.0f;
 
     visualization_msgs::Marker collisionPoints;
-    collisionPoints.header.frame_id = "/my_frame";
+    collisionPoints.header.frame_id = "/map";
     collisionPoints.header.stamp = ros::Time::now();
     collisionPoints.ns = "collisionPoints";
     collisionPoints.action = visualization_msgs::Marker::ADD;
@@ -413,7 +466,7 @@ int main(int argc, char **argv)
     collisionPoints.color.a = 1.0f;
 
     visualization_msgs::Marker waypointMarkers;
-    waypointMarkers.header.frame_id = "/my_frame";
+    waypointMarkers.header.frame_id = "/map";
     waypointMarkers.header.stamp = ros::Time::now();
     waypointMarkers.ns = "waypointMarkers";
     waypointMarkers.action = visualization_msgs::Marker::ADD;
@@ -430,7 +483,7 @@ int main(int argc, char **argv)
     waypointMarkers.color.a = 1.0f;
 
     visualization_msgs::Marker allPaths;
-    allPaths.header.frame_id = "/my_frame";
+    allPaths.header.frame_id = "/map";
     allPaths.header.stamp = ros::Time::now();
     allPaths.ns = "allPaths";
     allPaths.action = visualization_msgs::Marker::ADD;
@@ -447,7 +500,7 @@ int main(int argc, char **argv)
     allPaths.color.a = 0.1f;
 
     visualization_msgs::Marker traversedPaths;
-    traversedPaths.header.frame_id = "/my_frame";
+    traversedPaths.header.frame_id = "/map";
     traversedPaths.header.stamp = ros::Time::now();
     traversedPaths.ns = "traversedPaths";
     traversedPaths.action = visualization_msgs::Marker::ADD;
@@ -462,16 +515,16 @@ int main(int argc, char **argv)
     traversedPaths.color.b = 1.0f;
     traversedPaths.color.a = 1.0f;
 
-    double waypoints[12] = {1.0, 2.0, 0.0,   8.0, 8.0, 3.14,    8.0, 8.0, 3.14,    8.0, 8.0, 3.14};
+    double waypoints[16] = {ips_x, ips_y, ips_yaw,  5.0, 5.0, 0.0,   9.0, 1.0, 3.14,    9.0, 5.0, -3.14,    8.0, 8.0, 3.14};
 
     while (ros::ok())
     {
-    	loop_rate.sleep(); //Maintain the loop rate
-    	ros::spinOnce();   //Check for new messages
+      loop_rate.sleep(); //Maintain the loop rate
+      ros::spinOnce();   //Check for new messages
 
-    	//Main loop code goes here:
-    	// vel.linear.x = 1.0; // set linear speed
-    	// vel.angular.z = 1.0; // set angular speed
+      //Main loop code goes here:
+      // vel.linear.x = 1.0; // set linear speed
+      // vel.angular.z = 1.0; // set angular speed
       ROS_INFO("Looping...");
       if(mapReady) {
         generateRandomMap();
@@ -488,7 +541,7 @@ int main(int argc, char **argv)
 
         // for(int i = 0; i < waypointNodes.size(); i++) {
           // vector<int> shortestPath = getShortestPath(waypointNodes[i], waypointNodes[i+1]);
-          vector<int> shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
+          shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
           if(shortestPath.empty()) {
             mapReady = false;
             ROS_INFO("Path not found");
@@ -507,6 +560,8 @@ int main(int argc, char **argv)
             p2.y = pointMap[shortestPath[j+1]].y - MAP_SIZE/2;
             traversedPaths.points.push_back(p2);
           }
+          ROS_DEBUG("size_shortest= %d", shortestPath.size());
+
 
           for(auto &p:traversedPaths.points) {
             ROS_INFO("Path Node : [%f, %f]", p.x, p.y);
@@ -558,7 +613,6 @@ int main(int argc, char **argv)
           }
         }
         collisionPoints.points = displayCollisionPointsVec;
-
       }
 
       marker_pub.publish(allPaths);
@@ -567,7 +621,50 @@ int main(int argc, char **argv)
       marker_pub.publish(collisionPoints);
       marker_pub.publish(waypointMarkers);
 
-    	// velocity_publisher.publish(vel); // Publish the command velocity
+      ROS_DEBUG("shortestPath size = %d", shortestPath.size());
+
+      line_segment_x = ips_x - pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
+      line_segment_y = ips_y - pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
+
+      ROS_DEBUG("line_segment_x = %f", line_segment_x);
+      ROS_DEBUG("line_segment_y = %f", line_segment_y);
+
+      line_segment_x_final = ips_x - pointMap[shortestPath.size()-1].x / 100 * MAP_DIM / MAP_SIZE;
+      line_segment_y_final = ips_y - pointMap[shortestPath.size()-1].y % 100 * MAP_DIM / MAP_SIZE;
+
+      ROS_DEBUG("current index  = %d", current_index);
+
+      if ((line_segment_x_final > WAYPOINT_THRESHOLD && line_segment_y_final > WAYPOINT_THRESHOLD) || current_index == shortestPath.size()-1) {
+        ROS_DEBUG("DONE");
+        vel.linear.x = 0.0;
+        vel.angular.z = 0.0;
+      }
+      else {
+        if (abs(theta_error(line_segment_y, line_segment_x)) < THETA_THRESHOLD){
+          ROS_DEBUG("DONE TURNING, my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
+          vel.angular.z = 0.0;
+        } else {
+          vel.angular.z = P_CONTROL*theta_error(line_segment_y, line_segment_x);
+        }
+
+        if (line_segment_x > WAYPOINT_THRESHOLD && line_segment_y > WAYPOINT_THRESHOLD) {
+          float X = pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
+          float Y = pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
+          ROS_DEBUG("DONE waypoint %f %f", X, Y);
+          vel.linear.x = 0.0;
+          // vel.linear.y = 0.0;
+
+          current_index++;
+        } else {
+          float X = pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
+          float Y = pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
+          ROS_DEBUG("moving to waypoint %f %f currently at %f %f", X, Y, ips_x, ips_y);
+          vel.linear.x = P_CONTROL*line_segment_x;
+          // vel.linear.y = P_CONTROL*line_segment_y;
+        }
+      }
+
+      velocity_publisher.publish(vel); // Publish the command velocity
     }
 
     return 0;
