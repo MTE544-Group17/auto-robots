@@ -25,7 +25,7 @@
 #include <cmath>
 
 #define WAYPOINT_THRESHOLD    0.1
-#define THETA_THRESHOLD    0.01
+#define THETA_THRESHOLD    0.15
 #define P_CONTROL_LIN    0.75
 #define P_CONTROL_ANG    0.25
 #define MAP_DIM    10.0
@@ -35,8 +35,9 @@
 
 const int MAP_SIZE = 100;
 const int ROBOT_WIDTH = 3;
-const int NUM_POINTS = 1400;
-const int NUM_CONNECTIONS = 5;
+// const int NUM_POINTS = 1400;
+const int NUM_POINTS = 500;
+const int NUM_CONNECTIONS = 20;
 
 using namespace std;
 vector<int> shortestPath;
@@ -396,6 +397,74 @@ vector<int> getShortestPath(int startNode, int goalNode) {
 }
 
 /***************************************
+Path Optimization
+***************************************/
+// void removeCollisionPaths() {
+//   for(auto &point:pointMap) {
+//     vector<int>::iterator neighbour = point.nearestNeighbours.begin();
+//
+//     while(neighbour != point.nearestNeighbours.end()) {
+//       vector<int> x;
+//       vector<int> y;
+//
+//       bresenham(point.x, point.y, pointMap[*neighbour].x, pointMap[*neighbour].y, x, y);
+//
+//       bool pathCollides = false;
+//       for(int i = 0; i < x.size(); i++) {
+//         if(collisionMap[MAP_SIZE*y[i] + x[i]] > 0) {
+//           pathCollides = true;
+//         }
+//       }
+//
+//       if(pathCollides) {
+//         neighbour = point.nearestNeighbours.erase(neighbour);
+//       } else {
+//         neighbour++;
+//       }
+//     }
+//   }
+
+bool checkCollisionPaths(vector<int> shortestPathLocal, int p1, int p2) {
+  vector<int> x;
+  vector<int> y;
+  ROS_DEBUG("HERE Check collision");
+
+
+  bresenham(pointMap[shortestPathLocal[p1]].x, pointMap[shortestPathLocal[p1]].y, pointMap[shortestPathLocal[p2]].x, pointMap[shortestPathLocal[p2]].y, x, y);
+  bool pathCollides = false;
+
+  for(int i = 0; i < x.size(); i++) {
+    if(collisionMap[MAP_SIZE*y[i] + x[i]] > 0) {
+      pathCollides = true;
+      ROS_DEBUG("COLLIDED");
+    }
+  }
+
+  return pathCollides;
+}
+
+vector<int> optimizePath(vector<int> shortestPathLocal) {
+  vector<int> optimizedPath;
+  optimizedPath.push_back(shortestPathLocal.back());
+  ROS_DEBUG("HERE optimize paths");
+  int i = shortestPathLocal.size()-1;
+  while (i != 0 ) {
+    for (int j = 0; j < i; j++) {
+      ROS_DEBUG("hello");
+      if (!checkCollisionPaths(shortestPathLocal, i, j)) {
+        optimizedPath.push_back(shortestPathLocal[j]);
+        ROS_DEBUG("i = %d, j = %d", i , j);
+        i = j;
+        break;
+      }
+    }
+  }
+
+  return optimizedPath;
+}
+
+
+/***************************************
 Robot Movement Controller
 ***************************************/
 
@@ -547,6 +616,7 @@ int main(int argc, char **argv)
 
         for(int i = 0; i < waypointNodes.size()-2; i++) {
           vector<int> shortestPathLocal = getShortestPath(waypointNodes[i], waypointNodes[i+1]);
+          // shortestPathLocal = optimizePath(shortestPathLocal);
           // shortestPath.reserve(.size() + distance(v_prime.begin(),v_prime.end()));
           // v.insert(v.end(),v_prime.begin(),v_prime.end());
 
@@ -555,9 +625,9 @@ int main(int argc, char **argv)
           // shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
 
 
-          ROS_DEBUG("shortestPath size= %d", shortestPath.size());
-          ROS_DEBUG("shortestPath last x= %d", pointMap[shortestPath[0]].x);
-          ROS_DEBUG("shortestPath last y= %d", pointMap[shortestPath[0]].y);
+          // ROS_DEBUG("shortestPath size= %d", shortestPath.size());
+          // ROS_DEBUG("shortestPath last x= %d", pointMap[shortestPath[0]].x);
+          // ROS_DEBUG("shortestPath last y= %d", pointMap[shortestPath[0]].y);
 
           if(shortestPath.empty()) {
             mapReady = false;
@@ -638,20 +708,20 @@ int main(int argc, char **argv)
       marker_pub.publish(collisionPoints);
       marker_pub.publish(waypointMarkers);
 
-      ROS_DEBUG("current_index = %d", current_index);
-      ROS_DEBUG("shortestPath[current_index] = %d", shortestPath[current_index]);
+      // ROS_DEBUG("current_index = %d", current_index);
+      // ROS_DEBUG("shortestPath[current_index] = %d", shortestPath[current_index]);
 
-      ROS_DEBUG("pointMap.x raw = %d", pointMap[shortestPath[current_index]].x);
-      ROS_DEBUG("pointMap.x [m] = %f", pointMap[shortestPath[current_index]].x * MAP_RES);
-      ROS_DEBUG("pointMap.y raw = %d", pointMap[shortestPath[current_index]].y);
-      ROS_DEBUG("pointMap.y [m] = %f", pointMap[shortestPath[current_index]].y * MAP_RES);
+      // ROS_DEBUG("pointMap.x raw = %d", pointMap[shortestPath[current_index]].x);
+      // ROS_DEBUG("pointMap.x [m] = %f", pointMap[shortestPath[current_index]].x * MAP_RES);
+      // ROS_DEBUG("pointMap.y raw = %d", pointMap[shortestPath[current_index]].y);
+      // ROS_DEBUG("pointMap.y [m] = %f", pointMap[shortestPath[current_index]].y * MAP_RES);
 
 
       line_segment_x = pointMap[shortestPath[current_index]].x * MAP_RES - ips_x;
       line_segment_y = pointMap[shortestPath[current_index]].y * MAP_RES - ips_y;
 
-      ROS_DEBUG("line_segment_x = %f", line_segment_x);
-      ROS_DEBUG("line_segment_y = %f", line_segment_y);
+      // ROS_DEBUG("line_segment_x = %f", line_segment_x);
+      // ROS_DEBUG("line_segment_y = %f", line_segment_y);
 
       line_segment_x_final = pointMap[shortestPath[shortestPath.size()-1]].x * MAP_RES - ips_x;
       line_segment_y_final = pointMap[shortestPath[shortestPath.size()-1]].y * MAP_RES - ips_y;
@@ -664,24 +734,25 @@ int main(int argc, char **argv)
       else {
         ROS_DEBUG("theta error: %f", theta_error(line_segment_y, line_segment_x));
         if (abs(theta_error(line_segment_y, line_segment_x)) <= THETA_THRESHOLD){
-          ROS_DEBUG("DONE TURNING, my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
+          // ROS_DEBUG("DONE TURNING, my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
           vel.angular.z = 0.0;
           if (abs(line_segment_x) < WAYPOINT_THRESHOLD && abs(line_segment_y) < WAYPOINT_THRESHOLD) {
             float X = pointMap[shortestPath[current_index]].x * MAP_RES;
             float Y = pointMap[shortestPath[current_index]].y * MAP_RES;
-            ROS_DEBUG("DONE waypoint %f %f", X, Y);
+            // ROS_DEBUG("DONE waypoint %f %f", X, Y);
             vel.linear.x = 0.0;
             current_index++;
           } else {
             float X = pointMap[shortestPath[current_index]].x * MAP_RES;
             float Y = pointMap[shortestPath[current_index]].y * MAP_RES;
-            ROS_DEBUG("moving to waypoint %f %f currently at %f %f", X, Y, ips_x, ips_y);
+            // ROS_DEBUG("moving to waypoint %f %f currently at %f %f", X, Y, ips_x, ips_y);
             float dist_error = sqrt(line_segment_x*line_segment_x + line_segment_y*line_segment_y);
             vel.linear.x = P_CONTROL_LIN*dist_error;
+            // vel.linear.x = 1;
           }
         } else {
           vel.linear.x = 0.0;
-          ROS_DEBUG(" my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
+          // ROS_DEBUG(" my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
           vel.angular.z = P_CONTROL_ANG*theta_error(line_segment_y, line_segment_x);
         }
       }
