@@ -336,10 +336,10 @@ void pushOntoStack(vector<PathPoint> * stack, int nodeIndex, double cost, int go
   p.heuristicCost = sqrt(pow(p.x - pointMap[goalNode].x, 2) + pow(p.y - pointMap[goalNode].y, 2));
 
   pointMap[nodeIndex].visited = true;
-  ROS_INFO("Right before push # %d", nodeIndex);
+  // ROS_INFO("Right before push # %d", nodeIndex);
 
   stack->push_back(p);
-  ROS_INFO("Pushed to stack # %d", nodeIndex);
+  // ROS_INFO("Pushed to stack # %d", nodeIndex);
 }
 
 bool compareByFullCost(const PathPoint &a, const PathPoint &b) {
@@ -356,38 +356,38 @@ vector<int> getShortestPath(int startNode, int goalNode) {
   pushOntoStack(&stack, startNode, 0.0f, goalNode);
 
   while(!stack.empty()) {
-    ROS_INFO("Start loop of size : %d ", (int) stack.size());
+    // ROS_INFO("Start loop of size : %d ", (int) stack.size());
     sort(stack.begin(), stack.end(), compareByFullCost);
     PathPoint currentNode = stack.back();
     stack.pop_back();
-    ROS_INFO("Popped, size : %d ", (int) stack.size());
+    // ROS_INFO("Popped, size : %d ", (int) stack.size());
 
     if(currentNode.index == goalNode) {
-      ROS_INFO("Found goal node!");
+      // ROS_INFO("Found goal node!");
       shortestPath.push_back(currentNode.index);
       int parent = pointMap[currentNode.index].parentNodeIdex;
-      ROS_INFO("Starting looping result");
+      // ROS_INFO("Starting looping result");
       do {
-        ROS_INFO("Looping parent %d", parent);
+        // ROS_INFO("Looping parent %d", parent);
         shortestPath.push_back(parent);
         parent = pointMap[parent].parentNodeIdex;
       } while (parent != -1);
 
-      ROS_INFO("Found path of length : %d", (int) (shortestPath.size()));
+      // ROS_INFO("Found path of length : %d", (int) (shortestPath.size()));
       return shortestPath;
     }
 
     for(auto & neighbour:pointMap[currentNode.index].nearestNeighbours) {
-      ROS_INFO("Looping over neighbours");
+      // ROS_INFO("Looping over neighbours");
       if(!pointMap[neighbour].visited) {
         pointMap[neighbour].parentNodeIdex = currentNode.index;
         double interNodeCost = sqrt(pow(currentNode.x - pointMap[neighbour].x, 2) + pow(currentNode.y - pointMap[neighbour].y, 2));
-        ROS_INFO("Pushing on to stack");
+        // ROS_INFO("Pushing on to stack");
         pushOntoStack(&stack, neighbour, currentNode.cost + interNodeCost, goalNode);
       }
     }
 
-    ROS_INFO("Looping ~~");
+    // ROS_INFO("Looping ~~");
   }
 
   ROS_INFO("Exited *****");
@@ -531,7 +531,7 @@ int main(int argc, char **argv)
       //Main loop code goes here:
       // vel.linear.x = 1.0; // set linear speed
       // vel.angular.z = 1.0; // set angular speed
-      ROS_INFO("Looping...");
+      // ROS_INFO("Looping...");
       if(mapReady) {
         generateRandomMap();
         removeCollisionPoints();
@@ -539,15 +539,26 @@ int main(int argc, char **argv)
         removeCollisionPaths();
 
         vector<int> waypointNodes;
-        for(int i = 0; i < 12; i += 3) {
+        for(int i = 0; i < 16; i += 3) {
           int index = findClosestPoint((int) (waypoints[i] * 10), (int) (waypoints[i+1] * 10));
           waypointNodes.push_back(index);
         }
 
 
-        // for(int i = 0; i < waypointNodes.size(); i++) {
-          // vector<int> shortestPath = getShortestPath(waypointNodes[i], waypointNodes[i+1]);
-          shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
+        for(int i = 0; i < waypointNodes.size()-2; i++) {
+          vector<int> shortestPathLocal = getShortestPath(waypointNodes[i], waypointNodes[i+1]);
+          // shortestPath.reserve(.size() + distance(v_prime.begin(),v_prime.end()));
+          // v.insert(v.end(),v_prime.begin(),v_prime.end());
+
+
+          shortestPath.insert(shortestPath.begin(), shortestPathLocal.begin(), shortestPathLocal.end());
+          // shortestPath = getShortestPath(waypointNodes[0], waypointNodes[1]);
+
+
+          ROS_DEBUG("shortestPath size= %d", shortestPath.size());
+          ROS_DEBUG("shortestPath last x= %d", pointMap[shortestPath[0]].x);
+          ROS_DEBUG("shortestPath last y= %d", pointMap[shortestPath[0]].y);
+
           if(shortestPath.empty()) {
             mapReady = false;
             ROS_INFO("Path not found");
@@ -566,13 +577,11 @@ int main(int argc, char **argv)
             p2.y = (pointMap[shortestPath[j+1]].y)*MAP_RES + Y_OFFSET;
             traversedPaths.points.push_back(p2);
           }
-          ROS_DEBUG("size_shortest= %d", shortestPath.size());
 
-
-          for(auto &p:traversedPaths.points) {
-            ROS_INFO("Path Node : [%f, %f]", p.x, p.y);
-          }
-        // }
+          // for(auto &p:traversedPaths.points) {
+          //   ROS_INFO("Path Node : [%f, %f]", p.x, p.y);
+          // }
+        }
 
 
 
@@ -628,9 +637,6 @@ int main(int argc, char **argv)
       marker_pub.publish(points);
       marker_pub.publish(collisionPoints);
       marker_pub.publish(waypointMarkers);
-
-      ROS_DEBUG("shortestPath size = %d", shortestPath.size());
-
 
       ROS_DEBUG("current_index = %d", current_index);
       ROS_DEBUG("shortestPath[current_index] = %d", shortestPath[current_index]);
