@@ -26,8 +26,12 @@
 
 #define WAYPOINT_THRESHOLD    0.1
 #define THETA_THRESHOLD    0.01
-#define P_CONTROL    2.0
+#define P_CONTROL_LIN    0.75
+#define P_CONTROL_ANG    0.25
 #define MAP_DIM    10.0
+#define MAP_RES    0.1
+#define X_OFFSET   -1.0
+#define Y_OFFSET   -5.0
 
 const int MAP_SIZE = 100;
 const int ROBOT_WIDTH = 3;
@@ -42,7 +46,7 @@ float line_segment_y = 0;
 float line_segment_x_final = 0;
 float line_segment_y_final = 0;
 float dist_error = 0;
-int current_index = 0;
+int current_index = 1;
 
 int collisionMap[MAP_SIZE * MAP_SIZE];
 
@@ -79,8 +83,8 @@ void pose_callback(const gazebo_msgs::ModelStates& msg) {
   int i;
   for(i = 0; i < msg.name.size(); i++) if(msg.name[i] == "mobile_base") break;
 
-  ips_x = msg.pose[i].position.x;
-  ips_y = msg.pose[i].position.y;
+  ips_x = msg.pose[i].position.x - X_OFFSET;
+  ips_y = msg.pose[i].position.y -   Y_OFFSET;
   ips_yaw = tf::getYaw(msg.pose[i].orientation);
   ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", ips_x, ips_y, ips_yaw);
 
@@ -442,8 +446,8 @@ int main(int argc, char **argv)
     points.id = 1;
     points.points.clear();
 
-    points.scale.x = 0.8f;
-    points.scale.y = 0.8f;
+    points.scale.x = 0.08f;
+    points.scale.y = 0.08f;
 
     points.color.r = 1.0f;
     points.color.a = 1.0f;
@@ -457,8 +461,8 @@ int main(int argc, char **argv)
     collisionPoints.id = 2;
     collisionPoints.points.clear();
 
-    collisionPoints.scale.x = 1.2f;
-    collisionPoints.scale.y = 1.2f;
+    collisionPoints.scale.x = 0.12f;
+    collisionPoints.scale.y = 0.12f;
 
     collisionPoints.color.r = 0.8f;
     collisionPoints.color.g = 0.8f;
@@ -474,8 +478,8 @@ int main(int argc, char **argv)
     waypointMarkers.id = 3;
     waypointMarkers.points.clear();
 
-    waypointMarkers.scale.x = 1.8f;
-    waypointMarkers.scale.y = 1.8f;
+    waypointMarkers.scale.x = 0.18f;
+    waypointMarkers.scale.y = 0.18f;
 
     waypointMarkers.color.r = 0.0f;
     waypointMarkers.color.g = 1.0f;
@@ -491,8 +495,8 @@ int main(int argc, char **argv)
     allPaths.id = 4;
     allPaths.points.clear();
 
-    allPaths.scale.x = 0.3f;
-    allPaths.scale.y = 0.3f;
+    allPaths.scale.x = 0.03f;
+    allPaths.scale.y = 0.03f;
 
     allPaths.color.r = 0.0f;
     allPaths.color.g = 1.0f;
@@ -507,20 +511,22 @@ int main(int argc, char **argv)
     traversedPaths.type = visualization_msgs::Marker::LINE_LIST;
     traversedPaths.id = 5;
 
-    traversedPaths.scale.x = 0.8f;
-    traversedPaths.scale.y = 0.8f;
+    traversedPaths.scale.x = 0.08f;
+    traversedPaths.scale.y = 0.08f;
 
     traversedPaths.color.r = 1.0f;
     traversedPaths.color.g = 1.0f;
     traversedPaths.color.b = 1.0f;
     traversedPaths.color.a = 1.0f;
 
-    double waypoints[16] = {ips_x, ips_y, ips_yaw,  5.0, 5.0, 0.0,   9.0, 1.0, 3.14,    9.0, 5.0, -3.14,    8.0, 8.0, 3.14};
+
+    ROS_DEBUG("pose_callback X: %f Y: %f Yaw: %f", ips_x, ips_y, ips_yaw);
 
     while (ros::ok())
     {
       loop_rate.sleep(); //Maintain the loop rate
       ros::spinOnce();   //Check for new messages
+      static double waypoints[16] = {ips_x, ips_y, ips_yaw,  5.0, 5.0, 0.0,   9.0, 1.0, 3.14,    9.0, 5.0, -3.14,    8.0, 8.0, 3.14};
 
       //Main loop code goes here:
       // vel.linear.x = 1.0; // set linear speed
@@ -553,11 +559,11 @@ int main(int argc, char **argv)
             geometry_msgs::Point p1;
             geometry_msgs::Point p2;
 
-            p1.x = pointMap[shortestPath[j]].x - MAP_SIZE/2;
-            p1.y = pointMap[shortestPath[j]].y - MAP_SIZE/2;
+            p1.x = (pointMap[shortestPath[j]].x)*MAP_RES + X_OFFSET;
+            p1.y = (pointMap[shortestPath[j]].y)*MAP_RES + Y_OFFSET;
             traversedPaths.points.push_back(p1);
-            p2.x = pointMap[shortestPath[j+1]].x - MAP_SIZE/2;
-            p2.y = pointMap[shortestPath[j+1]].y - MAP_SIZE/2;
+            p2.x = (pointMap[shortestPath[j+1]].x)*MAP_RES + X_OFFSET;
+            p2.y = (pointMap[shortestPath[j+1]].y)*MAP_RES + Y_OFFSET;
             traversedPaths.points.push_back(p2);
           }
           ROS_DEBUG("size_shortest= %d", shortestPath.size());
@@ -571,22 +577,22 @@ int main(int argc, char **argv)
 
 
         // geometry_msgs::Point wp1;
-        // wp1.x = 20 - MAP_SIZE/2;
-        // wp1.y = 10 - MAP_SIZE/2;
+        // wp1.x = 20;
+        // wp1.y = 10;
         // waypointMarkers.points.push_back(wp1);
         // geometry_msgs::Point wp2;
-        // wp2.x = 80 - MAP_SIZE/2;
-        // wp2.y = 10 - MAP_SIZE/2;
+        // wp2.x = 80;
+        // wp2.y = 10;
         // waypointMarkers.points.push_back(wp2);
 
         for(auto &point:pointMap) {
           geometry_msgs::Point p1;
-          p1.x = point.x - MAP_SIZE/2;
-          p1.y = point.y - MAP_SIZE/2;
+          p1.x = (point.x)*MAP_RES + X_OFFSET;
+          p1.y = (point.y)*MAP_RES + Y_OFFSET;
           for(auto &neighbour:point.nearestNeighbours) {
             geometry_msgs::Point p2;
-            p2.x = pointMap[neighbour].x - MAP_SIZE/2;
-            p2.y = pointMap[neighbour].y - MAP_SIZE/2;
+            p2.x = (pointMap[neighbour].x)*MAP_RES + X_OFFSET;
+            p2.y = (pointMap[neighbour].y)*MAP_RES + Y_OFFSET;
             allPaths.points.push_back(p1);
             allPaths.points.push_back(p2);
           }
@@ -597,8 +603,8 @@ int main(int argc, char **argv)
         vector<geometry_msgs::Point> displayPointsVec;
         for(auto &point:pointMap) {
           geometry_msgs::Point p;
-          p.x = point.x - MAP_SIZE/2;
-          p.y = point.y - MAP_SIZE/2;
+          p.x = (point.x)*MAP_RES + X_OFFSET;
+          p.y = (point.y)*MAP_RES + Y_OFFSET;
           displayPointsVec.push_back(p);
         }
         points.points = displayPointsVec;
@@ -607,12 +613,14 @@ int main(int argc, char **argv)
         for(int i =0; i < MAP_SIZE * MAP_SIZE; i++) {
           if(collisionMap[i] > 0) {
             geometry_msgs::Point p;
-            p.x = i%MAP_SIZE - MAP_SIZE/2;
-            p.y = (int) (i /MAP_SIZE) - MAP_SIZE/2;
+            p.x = (i%MAP_SIZE)*MAP_RES + X_OFFSET;
+            p.y = ((int) (i /MAP_SIZE))*MAP_RES + Y_OFFSET;
             displayCollisionPointsVec.push_back(p);
           }
         }
         collisionPoints.points = displayCollisionPointsVec;
+
+        reverse(shortestPath.begin(), shortestPath.end());
       }
 
       marker_pub.publish(allPaths);
@@ -623,47 +631,54 @@ int main(int argc, char **argv)
 
       ROS_DEBUG("shortestPath size = %d", shortestPath.size());
 
-      line_segment_x = ips_x - pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
-      line_segment_y = ips_y - pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
+
+      ROS_DEBUG("current_index = %d", current_index);
+      ROS_DEBUG("shortestPath[current_index] = %d", shortestPath[current_index]);
+
+      ROS_DEBUG("pointMap.x raw = %d", pointMap[shortestPath[current_index]].x);
+      ROS_DEBUG("pointMap.x [m] = %f", pointMap[shortestPath[current_index]].x * MAP_RES);
+      ROS_DEBUG("pointMap.y raw = %d", pointMap[shortestPath[current_index]].y);
+      ROS_DEBUG("pointMap.y [m] = %f", pointMap[shortestPath[current_index]].y * MAP_RES);
+
+
+      line_segment_x = pointMap[shortestPath[current_index]].x * MAP_RES - ips_x;
+      line_segment_y = pointMap[shortestPath[current_index]].y * MAP_RES - ips_y;
 
       ROS_DEBUG("line_segment_x = %f", line_segment_x);
       ROS_DEBUG("line_segment_y = %f", line_segment_y);
 
-      line_segment_x_final = ips_x - pointMap[shortestPath.size()-1].x / 100 * MAP_DIM / MAP_SIZE;
-      line_segment_y_final = ips_y - pointMap[shortestPath.size()-1].y % 100 * MAP_DIM / MAP_SIZE;
+      line_segment_x_final = pointMap[shortestPath[shortestPath.size()-1]].x * MAP_RES - ips_x;
+      line_segment_y_final = pointMap[shortestPath[shortestPath.size()-1]].y * MAP_RES - ips_y;
 
-      ROS_DEBUG("current index  = %d", current_index);
-
-      if ((line_segment_x_final > WAYPOINT_THRESHOLD && line_segment_y_final > WAYPOINT_THRESHOLD) || current_index == shortestPath.size()-1) {
-        ROS_DEBUG("DONE");
-        vel.linear.x = 0.0;
-        vel.angular.z = 0.0;
+      if ((abs(line_segment_x_final) <= WAYPOINT_THRESHOLD && abs(line_segment_y_final) <= WAYPOINT_THRESHOLD)) {
+         ROS_DEBUG("DONE");
+         vel.linear.x = 0.0;
+         vel.angular.z = 0.0;
       }
       else {
-        if (abs(theta_error(line_segment_y, line_segment_x)) < THETA_THRESHOLD){
+        ROS_DEBUG("theta error: %f", theta_error(line_segment_y, line_segment_x));
+        if (abs(theta_error(line_segment_y, line_segment_x)) <= THETA_THRESHOLD){
           ROS_DEBUG("DONE TURNING, my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
           vel.angular.z = 0.0;
+          if (abs(line_segment_x) < WAYPOINT_THRESHOLD && abs(line_segment_y) < WAYPOINT_THRESHOLD) {
+            float X = pointMap[shortestPath[current_index]].x * MAP_RES;
+            float Y = pointMap[shortestPath[current_index]].y * MAP_RES;
+            ROS_DEBUG("DONE waypoint %f %f", X, Y);
+            vel.linear.x = 0.0;
+            current_index++;
+          } else {
+            float X = pointMap[shortestPath[current_index]].x * MAP_RES;
+            float Y = pointMap[shortestPath[current_index]].y * MAP_RES;
+            ROS_DEBUG("moving to waypoint %f %f currently at %f %f", X, Y, ips_x, ips_y);
+            float dist_error = sqrt(line_segment_x*line_segment_x + line_segment_y*line_segment_y);
+            vel.linear.x = P_CONTROL_LIN*dist_error;
+          }
         } else {
-          vel.angular.z = P_CONTROL*theta_error(line_segment_y, line_segment_x);
-        }
-
-        if (line_segment_x > WAYPOINT_THRESHOLD && line_segment_y > WAYPOINT_THRESHOLD) {
-          float X = pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
-          float Y = pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
-          ROS_DEBUG("DONE waypoint %f %f", X, Y);
           vel.linear.x = 0.0;
-          // vel.linear.y = 0.0;
-
-          current_index++;
-        } else {
-          float X = pointMap[shortestPath[current_index]].x / 100 * MAP_DIM / MAP_SIZE;
-          float Y = pointMap[shortestPath[current_index]].y % 100 * MAP_DIM / MAP_SIZE;
-          ROS_DEBUG("moving to waypoint %f %f currently at %f %f", X, Y, ips_x, ips_y);
-          vel.linear.x = P_CONTROL*line_segment_x;
-          // vel.linear.y = P_CONTROL*line_segment_y;
+          ROS_DEBUG(" my yaw: %f, the yaw of the waypoint:%f", ips_yaw, atan2(line_segment_y, line_segment_x));
+          vel.angular.z = P_CONTROL_ANG*theta_error(line_segment_y, line_segment_x);
         }
       }
-
       velocity_publisher.publish(vel); // Publish the command velocity
     }
 
